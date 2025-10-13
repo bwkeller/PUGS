@@ -18,7 +18,7 @@ random_seed	8896131
 
 # Specify output directory:
 outname DM_volume
-outdir	 ./output
+outdir	 ./outputs
 
 # Pick output format:
 outformat tipsy
