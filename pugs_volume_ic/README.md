@@ -1,5 +1,12 @@
 This package contains all the required scripts and input files used to generate the $50 h^{-1}$ Mpc, 
-2048^3 collisionless volume that PUGS uses to generate zoom ICs from.
+2048^3 collisionless volume that PUGS uses to generate zoom ICs from.  Be aware
+that because this IC is quite large, genetIC will require at least 320 GB of
+memory to run.  It takes roughly 90 minutes to complete on 96 EPYC 9454 cores.
+
+Requirements
+------------
+- Python 3 (tested with version 3.9.16 and above)
+- Docker (tested with version 28.5.1, build e180ab8)
 
 Directory Structure
 -------------------
@@ -15,3 +22,5 @@ genetIC
     - `genetIC_volume.txt`: parameter file used by genetIC to build the initial
       conditions for the large, collisionless volume.  When run with genetIC,
       it should output a tipsy IC ready to run.
+- `build.sh`: This small bash script will run both CAMB and genetIC to build the
+      PUGS volume.  
