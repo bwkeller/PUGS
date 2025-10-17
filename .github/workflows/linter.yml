@@ -9,8 +9,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build dev environment
         run: |
-          bash setup_env.sh
-          source .venv/bin/activate
+          pip install -r pip-requirements.txt
+          pip install -r dev-requirements.txt
       - name: Run Black formatter
         run: |
           black --check .
