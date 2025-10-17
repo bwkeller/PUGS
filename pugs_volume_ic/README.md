@@ -26,7 +26,8 @@ Directory Structure
       conditions for the large, collisionless volume.  When run with genetIC, it
       should output a tipsy IC ready to run.
 - `build.sh`: This small bash script will run both CAMB and genetIC to build the
-  PUGS volume.  
+  PUGS volume.  Passing the -t argument will run in a testing mode, where a much
+  smaller 128^3 volume will be built
 - `fix_header.py`: Because the PUGS volume contains 2^32 particles, it overflows
   the 32-bit integer that default tipsy format ICs use.  TANGOS does not
   currently support the sussheader-version introduced in pkdgrav3, so this
