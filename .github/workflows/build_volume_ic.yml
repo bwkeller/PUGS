@@ -19,6 +19,6 @@ jobs:
       - name: Check that the md5 checksums of the outputs are correct
         run: |
           cd pugs_volume_ic
-          wc -c output/*
-          md5sum output/*
+          wc -c outputs/*
+          md5sum outputs/*
           md5sum -c .checksums.txt
