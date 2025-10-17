@@ -14,6 +14,8 @@ camb inputs/planck_2018_CAMB.ini &> outputs/camb.log
 cp inputs/genetIC_volume.txt .
 docker run --rm -v `pwd`:/w/ --user $(id -u):$(id -g) apontzen/genetic:1.5.0 /w/genetIC_volume.txt
 
+# Fix the 32-bit tipsy header issue
+./fix_header.py outputs/DM_volume.tipsy
 
 # Clean up
 mv planck_2018_transfer_out.dat outputs/
