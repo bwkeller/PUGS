@@ -1,0 +1,22 @@
+name: linter
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Python
+        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - name: Build dev environment
+        run: |
+          bash setup_env.sh
+          source .venv/bin/activate
+      - name: Run Black formatter
+        run: |
+          black --check .
+      - name: Run flake8 linter
+        run: |
+          flake8 .
+      - name: Run isort to check imports
+        run: |
+          isort --check-only .
