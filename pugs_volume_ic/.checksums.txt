@@ -1,0 +1,4 @@
+8e83f6ea9ba24f383dd6ccdbf7ad6d19 *outputs/camb.log
+2ded8a609df050b1a455043318d997d8 *outputs/DM_volume.tipsy
+0c6c7d44132b7ab6ab5c2e2145648a5b *outputs/planck_2018_transfer_out.dat
+5783d988ce4380a5eb7577b08011c53a *outputs/tipsy.param

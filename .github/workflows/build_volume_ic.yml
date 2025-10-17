@@ -16,3 +16,6 @@ jobs:
         run: |
           cd pugs_volume_ic
           ./build.sh -t
+      - name: Check that the md5sums of the outputs are correct
+        run: |
+          md5sum -c .checksums.txt
