@@ -4,6 +4,10 @@ ICs from.  Be aware that because this IC is quite large, genetIC will require at
 least 320 GB of memory to run.  It takes roughly 90 minutes to complete on 96
 EPYC 9454 cores.
 
+In order to get bitwise reproducibility, the IC _must_ be run with the same
+number of threads.  If you are running this on a machine with fewer than 96
+cores, the build will still succeed, but the performance may be poor.
+
 Requirements
 ------------
 - Python 3 (tested with version 3.9.16 and above)
@@ -27,7 +31,7 @@ Directory Structure
       should output a tipsy IC ready to run.
 - `build.sh`: This small bash script will run both CAMB and genetIC to build the
   PUGS volume.  Passing the -t argument will run in a testing mode, where a much
-  smaller 128^3 volume will be built
+  smaller 128^3 volume will be built, and this build will use 4 OMP threads.
 - `fix_header.py`: Because the PUGS volume contains 2^32 particles, it overflows
   the 32-bit integer that default tipsy format ICs use.  TANGOS does not
   currently support the sussheader-version introduced in pkdgrav3, so this
