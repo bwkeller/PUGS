@@ -1,0 +1,1 @@
+- pynbody requires python 3.10 or higher
