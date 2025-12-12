@@ -1,8 +1,9 @@
-import tangos
-import pynbody
 import numpy as np
+import pynbody
+import tangos
 from tangos.properties import PropertyCalculation
 from tangos.properties.pynbody import PynbodyPropertyCalculation
+
 
 class HalfMassRedShiftLive(PropertyCalculation):
     names = "z_half_live"
@@ -35,7 +36,7 @@ class HalfMassRedShift(PropertyCalculation):
 
 class VirialRadius(PynbodyPropertyCalculation):
     names = "r200"
-    
+
     def calculate(self, particle_data, existing_properties):
         with pynbody.transformation.translate(particle_data, -existing_properties['shrink_center']):
             return pynbody.analysis.halo.virial_radius(particle_data, overden=200)
@@ -46,4 +47,3 @@ class VirialRadius(PynbodyPropertyCalculation):
 
     def requires_property(self):
         return ["shrink_center", "max_radius"]
-

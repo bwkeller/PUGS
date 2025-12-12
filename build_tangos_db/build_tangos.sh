@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-
 tangos add --min-particles 500 $1
 tangos link --sims $1
 tangos import-properties Mhalo Rhalo lambda r2 cNFW --for $1
