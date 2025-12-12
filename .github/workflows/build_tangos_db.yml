@@ -1,7 +1,7 @@
 name: Tangos DB Build Test
 on: [push, pull_request]
 jobs:
-  build_ic:
+  build_db:
     runs-on: ubuntu-latest
     steps:
       - name: Install Python

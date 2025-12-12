@@ -1,4 +1,4 @@
-# `pugs_volume_ic` [![build_volume_ic](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml)
+# `build_volume_ic` [![build_volume_ic](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml)
 
 This package contains all the required scripts and input files used to generate
 the $50 h^{-1}$ Mpc, 2048^3 collisionless volume that PUGS uses to generate zoom
