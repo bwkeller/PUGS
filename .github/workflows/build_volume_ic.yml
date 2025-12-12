@@ -1,4 +1,4 @@
-name: build_volume_ic
+name: Volume IC Build Test
 on: [push, pull_request]
 jobs:
   build_ic:

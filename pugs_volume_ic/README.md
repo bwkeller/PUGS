@@ -1,3 +1,5 @@
+# `pugs_volume_ic` [![build_volume_ic](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml) 
+
 This package contains all the required scripts and input files used to generate
 the $50 h^{-1}$ Mpc, 2048^3 collisionless volume that PUGS uses to generate zoom
 ICs from.  Be aware that because this IC is quite large, genetIC will require at
@@ -8,13 +10,11 @@ In order to get bitwise reproducibility, the IC _must_ be run with the same
 number of threads.  If you are running this on a machine with fewer than 96
 cores, the build will still succeed, but the performance may be poor.
 
-Requirements
-------------
+## Requirements
 - Python 3 (tested with version 3.9.16 and above)
 - Docker (tested with version 28.5.1, build e180ab8)
 
-Directory Structure
--------------------
+## Directory Structure
 - `requirements.txt`: python libraries (pinned to specific versions for
   reproducibility) required for this module of PUGS
 -`inputs/`: This is the directory containing the input param files for CAMB and

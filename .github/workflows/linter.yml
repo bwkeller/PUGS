@@ -1,4 +1,4 @@
-name: linter
+name: Flake8
 on: [push, pull_request]
 jobs:
   lint:
