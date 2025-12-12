@@ -7,6 +7,11 @@ from tangos.properties.pynbody import PynbodyPropertyCalculation
 
 
 class StoreIords(PynbodyPropertyCalculation):
+    """
+    This property stores the zlib compressed iorders of the particles within 2
+    virial radii of the center of mass of the halo.
+    """
+
     names = "zlib_ids"
 
     def calculate(self, particle_data, existing_properties):
@@ -26,6 +31,11 @@ class StoreIords(PynbodyPropertyCalculation):
 
 
 class GetIords(LivePropertyCalculation):
+    """
+    This property loads and decompresses the zlib compressed iorders of the
+    particles stored by the StoreIords property.
+    """
+
     names = "ids"
 
     def calculate(self, particle_data, existing_properties):

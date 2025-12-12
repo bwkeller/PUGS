@@ -1,0 +1,20 @@
+name: Tangos DB Build Test
+on: [push, pull_request]
+jobs:
+  build_ic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Python
+        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - name: Install requirements
+        run: |
+          pip install -r pip-requirements.txt
+          pip install -r dev-requirements.txt
+          pip install -r build_tangos_db/requirements.txt
+      - name: Run the tests
+        run: |
+          cd build_tangos_db
+          source config_vars
+          mkdir -p $HOME/data/
+          pytest

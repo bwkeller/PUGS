@@ -1,5 +1,5 @@
 export TANGOS_DB_CONNECTION=pugs.db
 export TANGOS_PROPERTY_MODULES=properties
-export TANGOS_SIMULATION_FOLDER=/Users/kellerbw/data
+export TANGOS_SIMULATION_FOLDER=$HOME/data
 export PYTHONPATH=.
 export SIM=NUGS128
