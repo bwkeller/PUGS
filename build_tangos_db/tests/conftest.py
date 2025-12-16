@@ -9,20 +9,6 @@ import tangos
 
 
 @pytest.fixture(scope="session")
-def pyn_snaps():
-    sims = {}
-    halos = {}
-    for tsim in tangos.all_simulations():
-        snap = tsim.timesteps[0]
-        sim = pyn.load(snap.filename)
-        sim.physical_units()
-        h = sim.halos()
-        sims[snap.filename] = sim
-        halos[snap.filename] = h
-    return sims, halos
-
-
-@pytest.fixture(scope="session")
 def get_testdata():
     url = "https://nbody.shop/NUGS128.tar.gz"
     r = requests.get(url, stream=True)
@@ -37,7 +23,7 @@ def get_testdata():
         raise Exception(f"Failed to download test data: {r.status_code}")
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session", autouse=False)
 def build_database(get_testdata):
     print("Building DB")
     yield subprocess.run(["/bin/bash", "build_tangos.sh"])
