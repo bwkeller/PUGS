@@ -83,10 +83,47 @@ class MassPercentileRedshifts(LivePropertyCalculation):
     names = "z25_mass", "z50_mass", "z75_mass"
 
     def calculate(self, _, halo):
-        m,z = halo.calculate_for_progenitors('m200c', 'z()')
-        return z[m > 0.25*halo['m200c']][-1], \
-               z[m > 0.5*halo['m200c']][-1], \
-               z[m > 0.75*halo['m200c']][-1] 
+        m, z = halo.calculate_for_progenitors("m200c", "z()")
+        return (
+            z[m > 0.25 * halo["m200c"]][-1],
+            z[m > 0.5 * halo["m200c"]][-1],
+            z[m > 0.75 * halo["m200c"]][-1],
+        )
+
+    def requires_property(self):
+        return ["m200c"]
+
+
+class MergerHistory(LivePropertyCalculation):
+    names = "N_mm", "z_lmm"
+
+    def calculate(self, _, halo):
+        N_mm = 0
+        z_lmm = 0
+        names, masses, z = halo.calculate_for_descendants(
+            "path()",
+            "m200c",
+            "z()",
+            strategy=tangos.relation_finding.MultiHopAllProgenitorsStrategy,
+        )
+        all_z = np.unique(z)
+        # Iterate through the redshifts in reverse
+        for z_i in all_z[-1::-1]:
+            this_z = z == z_i
+            if (this_z).sum() < 2:
+                continue
+            descends = np.array([tangos.get_halo(n).next for n in names[this_z]])
+            seen = set()
+            merged = {x for x in descends if x in seen or seen.add(x)}
+            if len(merged) == 0:
+                continue
+            for d in merged:
+                merge_mass = masses[this_z][descends == d]
+                if merge_mass.max() * 0.25 > np.sort(merge_mass)[-2]:
+                    continue
+                N_mm += 1
+            z_lmm = z_i
+        return N_mm, z_lmm
 
     def requires_property(self):
         return ["m200c"]
