@@ -15,6 +15,9 @@ jobs:
       - name: Run the tests
         run: |
           cd build_tangos_db
-          source config_vars
+          wget https://nbody.shop/NUGS128.tar.gz
           mkdir -p $HOME/data/
+          tar -cvzf NUGS128.tar.gz -C $HOME/data
+          source config_vars
+          ./build_tangos.sh
           pytest
