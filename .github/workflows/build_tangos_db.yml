@@ -22,5 +22,6 @@ jobs:
           ./build_tangos.sh
       - name: Run the tests
         run: |
+          cd build_tangos_db
           source config_vars
           pytest
