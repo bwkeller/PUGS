@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-source .venv/bin/activate
 source config_vars
 
 tangos add --min-particles 500 $SIM
