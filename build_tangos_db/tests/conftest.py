@@ -2,10 +2,8 @@ import os
 import subprocess
 import tarfile
 
-import pynbody as pyn
 import pytest
 import requests
-import tangos
 
 
 @pytest.fixture(scope="session")
@@ -19,11 +17,12 @@ def get_testdata():
         # Extract the tar.gz file
         with tarfile.open("NUGS128.tar.gz", "r:gz") as tar:
             tar.extractall(os.environ["TANGOS_SIMULATION_FOLDER"], filter="data")
+        os.remove("NUGS128.tar.gz")
     else:
         raise Exception(f"Failed to download test data: {r.status_code}")
 
 
-@pytest.fixture(scope="session", autouse=False)
+@pytest.fixture(scope="session", autouse=True)
 def build_database(get_testdata):
     print("Building DB")
     yield subprocess.run(["/bin/bash", "build_tangos.sh"])

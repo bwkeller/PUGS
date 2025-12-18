@@ -1,10 +1,8 @@
-import contextlib
-
 import numpy as np
 import pynbody as pyn
 import pytest
 import tangos
-from numpy.testing import assert_allclose, assert_equal
+from numpy.testing import assert_allclose, assert_array_equal, assert_array_less
 
 
 @pytest.fixture(scope="function")
@@ -14,6 +12,24 @@ def last_halo():
     sim.physical_units()
     h = sim.halos()
     return sim, h[0], snap.halos[0]
+
+
+def test_property_counts():
+    for ts in tangos.get_simulation("NUGS128").timesteps:
+        halo_count = ts.halos.count()
+        assert ts.calculate_all("shrink_center")[0].size == halo_count * 3  # x,y,z
+        assert ts.calculate_all("max_radius")[0].size == halo_count
+        assert ts.calculate_all("finder_mass")[0].size == halo_count
+        assert ts.calculate_all("M200")[0].size == halo_count
+        assert ts.calculate_all("M500")[0].size == halo_count
+        assert ts.calculate_all("R500")[0].size == halo_count
+        if ts == tangos.get_simulation("NUGS128").timesteps[-1]:
+            assert ts.calculate_all("zlib_ids")[0].size == halo_count
+            assert ts.calculate_all("N_mm")[0].size == halo_count
+            assert ts.calculate_all("z_lmm")[0].size == halo_count
+            assert ts.calculate_all("z25_mass")[0].size == halo_count
+            assert ts.calculate_all("z50_mass")[0].size == halo_count
+            assert ts.calculate_all("z75_mass")[0].size == halo_count
 
 
 def test_id_compression(last_halo):
@@ -32,17 +48,13 @@ def test_virial_radii(last_halo):
     """
     psim, ph, th = last_halo
     filt = pyn.filt.Sphere(th["max_radius"] * 3, th["shrink_center"])
-    snap_r200c = pyn.analysis.halo.virial_radius(
-        psim[filt], cen=th["shrink_center"], overden=200, rho_def="critical"
-    )
     snap_r500c = pyn.analysis.halo.virial_radius(
         psim[filt], cen=th["shrink_center"], overden=500, rho_def="critical"
     )
-    tangos_r200c = th["r200c"]
-    tangos_r500c = th["r500c"]
+    tangos_r200c = th["max_radius"]
+    tangos_r500c = th["R500"]
     assert tangos_r500c < tangos_r200c
-    assert_equal(tangos_r200c, snap_r200c)
-    assert_equal(tangos_r500c, snap_r500c)
+    assert_array_equal(tangos_r500c, snap_r500c)
 
 
 def test_virial_mass(last_halo):
@@ -57,8 +69,8 @@ def test_virial_mass(last_halo):
     snap_r500c = pyn.analysis.halo.virial_radius(
         psim[filt], cen=th["shrink_center"], overden=500, rho_def="critical"
     )
-    tangos_m200c = th["m200c"]
-    tangos_m500c = th["m500c"]
+    tangos_m200c = th["M200"]
+    tangos_m500c = th["M500"]
     snap_m200c = psim[pyn.filt.Sphere(snap_r200c, th["shrink_center"])]["mass"].sum()
     snap_m500c = psim[pyn.filt.Sphere(snap_r500c, th["shrink_center"])]["mass"].sum()
     assert tangos_m500c < tangos_m200c
@@ -66,10 +78,27 @@ def test_virial_mass(last_halo):
     assert_allclose(tangos_m500c, snap_m500c, rtol=1e-3)
 
 
-def test_mass_percentiles(last_halo):
+def test_mass_percentiles():
     """
     Check that the halo mass assembly percentiles are sane.
     """
-    psim, ph, th = last_halo
-    assert th.calculate("z25_mass()") > th.calculate("z50_mass()")
-    assert th.calculate("z50_mass()") > th.calculate("z75_mass()")
+    ts = tangos.get_simulation("NUGS128").timesteps[-1]
+    z25_mass, z50_mass, z75_mass = ts.calculate_all("z25_mass", "z50_mass", "z75_mass")
+    assert np.all(z25_mass >= z50_mass)
+    assert np.all(z50_mass >= z75_mass)
+    assert_array_less(0, z25_mass)
+    assert_array_less(0, z50_mass)
+    assert_array_less(0, z75_mass)
+
+
+def test_merger_history():
+    """
+    Check that the merger history quantities are sane
+    """
+    ts = tangos.get_simulation("NUGS128").timesteps[-1]
+    z_lmm, N_mm = ts.calculate_all("z_lmm", "N_mm")
+    assert z_lmm.min() >= -1.0
+    assert N_mm.min() >= 0
+    assert_array_less(0, z_lmm[N_mm > 0])
+    assert_array_equal(-1.0, z_lmm[N_mm == 0])
+    assert_array_less(0, N_mm[N_mm != 0])

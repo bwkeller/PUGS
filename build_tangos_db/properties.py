@@ -3,14 +3,13 @@ import zlib
 import numpy as np
 import pynbody
 import tangos
-from tangos.properties import LivePropertyCalculation
+from tangos.properties import LivePropertyCalculation, PropertyCalculation
 from tangos.properties.pynbody import PynbodyPropertyCalculation
-from tangos.properties.pynbody.centring import centred_calculation
 from tangos.properties.pynbody.radius import Radius
 
 
 class Radius500c(Radius):
-    names = "r500c"
+    names = "R500"
 
     @staticmethod
     def _get_overdensity_contrast():
@@ -38,11 +37,11 @@ class StoreIords(PynbodyPropertyCalculation):
 
     def region_specification(self, existing_properties):
         return pynbody.filt.Sphere(
-            existing_properties["r200c"] * 2, existing_properties["shrink_center"]
+            existing_properties["max_radius"] * 2, existing_properties["shrink_center"]
         )
 
     def requires_property(self):
-        return ["shrink_center", "r200c"]
+        return ["shrink_center", "max_radius"]
 
 
 class GetIords(LivePropertyCalculation):
@@ -61,48 +60,66 @@ class GetIords(LivePropertyCalculation):
         return ["zlib_ids"]
 
 
-class VirialMasses(PynbodyPropertyCalculation):
-    names = "m200c", "m500c"
+class Mass500c(PynbodyPropertyCalculation):
+    names = "M500"
 
-    @centred_calculation
     def calculate(self, particle_data, existing_properties):
         from pynbody.analysis import cosmology
 
         rho_crit = cosmology.rho_crit(particle_data, unit="Msol kpc**-3")
         m_crit = 4 / 3 * np.pi * rho_crit
-        return (
-            200 * m_crit * existing_properties["r200c"] ** 3,
-            500 * m_crit * existing_properties["r500c"] ** 3,
-        )
+        return 500 * m_crit * existing_properties["R500"] ** 3
 
     def requires_property(self):
-        return ["r200c", "r500c"]
+        return ["R500"]
 
 
-class MassPercentileRedshifts(LivePropertyCalculation):
+class Mass200c(PropertyCalculation):
+    names = "M200"
+
+    def calculate(self, particle_data, existing_properties):
+        return existing_properties["finder_mass"]
+
+    def requires_property(self):
+        return ["finder_mass"]
+
+
+class MassPercentileRedshifts(PropertyCalculation):
     names = "z25_mass", "z50_mass", "z75_mass"
 
+    @classmethod
+    def preloop(self, sim, db_timestep):
+        self.paths = db_timestep.calculate_all("path()")[0]
+
     def calculate(self, _, halo):
-        m, z = halo.calculate_for_progenitors("m200c", "z()")
+        m, z = tangos.get_halo(self.paths[halo.halo_number - 1]).calculate_for_progenitors(
+            "M200", "z()"
+        )
         return (
-            z[m > 0.25 * halo["m200c"]][-1],
-            z[m > 0.5 * halo["m200c"]][-1],
-            z[m > 0.75 * halo["m200c"]][-1],
+            z[m > 0.25 * halo["M200"]][-1],
+            z[m > 0.5 * halo["M200"]][-1],
+            z[m > 0.75 * halo["M200"]][-1],
         )
 
     def requires_property(self):
-        return ["m200c"]
+        return ["M200"]
 
 
-class MergerHistory(LivePropertyCalculation):
+class MergerHistory(PropertyCalculation):
     names = "N_mm", "z_lmm"
+
+    @classmethod
+    def preloop(self, sim, db_timestep):
+        self.paths = db_timestep.calculate_all("path()")[0]
 
     def calculate(self, _, halo):
         N_mm = 0
-        z_lmm = 0
-        names, masses, z = halo.calculate_for_descendants(
+        z_lmm = -1.0
+        names, masses, z = tangos.get_halo(
+            self.paths[halo.halo_number - 1]
+        ).calculate_for_descendants(
             "path()",
-            "m200c",
+            "M200",
             "z()",
             strategy=tangos.relation_finding.MultiHopAllProgenitorsStrategy,
         )
@@ -122,8 +139,8 @@ class MergerHistory(LivePropertyCalculation):
                 if merge_mass.max() * 0.25 > np.sort(merge_mass)[-2]:
                     continue
                 N_mm += 1
-            z_lmm = z_i
+                z_lmm = z_i
         return N_mm, z_lmm
 
     def requires_property(self):
-        return ["m200c"]
+        return ["M200"]
