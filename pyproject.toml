@@ -26,6 +26,9 @@ dev = [
     "pre-commit",
     ]
 
+[project.entry-points."tangos.property_modules"]
+properties = "pugs.properties"
+
 [tool.black]
 line-length = 100
 target-version = ['py313']
@@ -45,4 +48,4 @@ profile = "black"
 known_first_party = ["pugs"]
 
 [tool.setuptools]
-packages = ["pugs"]
+packages = ["pugs",]
