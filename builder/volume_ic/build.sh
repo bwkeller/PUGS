@@ -19,18 +19,13 @@ if [ "$#" -ne 0 ]; then
     fi
 fi
 
-# Build our local venv
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r ../pip-requirements.txt
-pip install -r requirements.txt
 mkdir -p outputs
 
 # Run CAMB
-camb ../inputs/planck_2018_CAMB.ini &> outputs/camb.log
+camb ../../inputs/planck_2018_CAMB.ini &> outputs/camb.log
 
 # Run genetIC
-cp ../inputs/genetIC_volume.txt .
+cp ../../inputs/genetIC_volume.txt .
 if [ "$TEST" -eq 1 ]; then
     sed -i -e 's/2048/128/g' genetIC_volume.txt
 fi

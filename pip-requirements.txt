@@ -1,1 +1,3 @@
 pip==25.2
+tangos==1.10.0
+pynbody==2.3.2

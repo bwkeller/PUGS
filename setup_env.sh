@@ -6,4 +6,4 @@ source .venv/bin/activate
 
 # Install pinned packages
 pip install -r pip-requirements.txt
-pip install -r dev-requirements.txt
+pip install -r build-requirements.txt

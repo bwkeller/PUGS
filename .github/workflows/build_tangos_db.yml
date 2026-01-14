@@ -10,11 +10,10 @@ jobs:
       - name: Install requirements
         run: |
           pip install -r pip-requirements.txt
-          pip install -r dev-requirements.txt
-          pip install -r build_tangos_db/requirements.txt
+          pip install -r build-requirements.txt
       - name: Build the tangos DB
         run: |
-          cd build_tangos_db
+          cd builder/tangos_db
           wget https://nbody.shop/NUGS128.tar.gz
           mkdir -p $HOME/data/
           tar -xvzf NUGS128.tar.gz -C $HOME/data
@@ -22,6 +21,6 @@ jobs:
           ./build_tangos.sh
       - name: Run the tests
         run: |
-          cd build_tangos_db
+          cd builder/tangos_db
           source config_vars
           pytest

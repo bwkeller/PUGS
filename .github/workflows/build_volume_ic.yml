@@ -10,13 +10,12 @@ jobs:
       - name: Install requirements
         run: |
           pip install -r pip-requirements.txt
-          pip install -r dev-requirements.txt
-          pip install -r build_volume_ic/requirements.txt
+          pip install -r build-requirements.txt
       - name: Build small test IC
         run: |
-          cd build_volume_ic
+          cd builder/volume_ic
           ./build.sh -t
       - name: Check that the md5 checksums of the outputs are correct
         run: |
-          cd build_volume_ic
+          cd builder/volume_ic
           md5sum -c .checksums.txt
