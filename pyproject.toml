@@ -1,3 +1,31 @@
+[build-system]
+requires = ["setuptools"]
+
+[project]
+name = "PUGS"
+authors = [
+    {name="BW Keller", email="bkeller1@memphis.edu"},
+]
+description = "PUGS: The Portable Universal Galaxy Sampler"
+readme = "README.md"
+dependencies = [
+    "pip==25.2",
+    "tangos==1.10.0",
+    "pynbody==2.3.2",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "camb==1.5.5",
+    "black==25.9.0",
+    "flake8==7.3.0",
+    "isort==7.0.0",
+    "pytest==9.0.2",
+    "requests==2.32.5",
+    "pre-commit",
+    ]
+
 [tool.black]
 line-length = 100
 target-version = ['py313']
@@ -15,3 +43,6 @@ enable = [
 [tool.isort]
 profile = "black"
 known_first_party = ["pugs"]
+
+[tool.setuptools]
+packages = ["pugs"]
