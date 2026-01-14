@@ -1,0 +1,40 @@
+# Cosmology, based on Planck 2018
+Ob           0.049387
+Om           0.315823
+Ol           0.684097
+s8           0.8119
+ns           0.9660499
+hubble       0.6732117
+z            200
+
+# Import transfer function data.
+# If you change the cosmological parameters above be sure to update the transfer
+# function accordingly. Some help is given in the folder tools/transfer_function/
+# within the genetIC distribution
+camb	./planck_2018_transfer_out.dat
+
+# Seed the field using the default algorithm (parallel Fourier space):
+random_seed	8896131
+
+# Specify output directory:
+outname {outname}
+outdir	 ./outputs
+
+# Pick output format:
+outformat tipsy
+
+# Specify the base-level grid, 50 h^-1 Mpc, 2048 cells on a side:
+base_grid 50 {base_grid}
+
+# Initialise the random component, apply modifications, and write the
+# resulting initial conditions:
+
+mapper_relative_to genetIC_volume.txt
+id_file id_file.txt
+
+zoom_grid {zoom_grid[0]} {zoom_grid[1]}
+autopad {autopad}
+centre_output
+subsample {subsample}
+
+done

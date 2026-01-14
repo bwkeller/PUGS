@@ -1,1 +1,1 @@
-__all__ = ["properties"]
+__all__ = ["properties", "genetic"]

@@ -2,4 +2,4 @@
 max-line-length = 100
 # required for compatibility with Black:
 extend-ignore = E203
-exclude = .venv
+exclude = .venv,inputs

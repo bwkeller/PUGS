@@ -3,8 +3,11 @@ repos:
     rev: v2.3.0
     hooks:
     - id: check-yaml
+      exclude: inputs
     - id: end-of-file-fixer
+      exclude: inputs
     - id: trailing-whitespace
+      exclude: inputs
   - repo: https://github.com/psf/black
     rev: 25.9.0
     hooks:

@@ -13,9 +13,23 @@ def write_particle_ids(halo_id, filename="id_file.txt"):
     np.savetxt(filename, ids, fmt="%d")
 
 
-def build_param_file(filename="genetIC_zoom.txt"):
-    with open("../inputs/genetIC_volume.txt", "r") as t:
+def build_param_file(
+    filename="genetIC_zoom.txt",
+    outname="PUGS_zoom",
+    base_grid=2048,
+    zoom_grid=[10, 2048],
+    autopad=1,
+    subsample=8,
+):
+    with open("../inputs/zoom_template.txt", "r") as t:
         template = t.read()
         with open(filename, "w") as f:
-            f.write(template)
-            f.write("id_file id_file.txt\n")
+            f.write(
+                template.format(
+                    outname=outname,
+                    base_grid=base_grid,
+                    zoom_grid=zoom_grid,
+                    autopad=autopad,
+                    subsample=subsample,
+                )
+            )
