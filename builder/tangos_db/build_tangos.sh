@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-source config_vars
+source $1
 
 tangos add --min-particles 500 $SIM
 
