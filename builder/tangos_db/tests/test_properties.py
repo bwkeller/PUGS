@@ -42,6 +42,22 @@ def test_id_compression(last_halo):
     assert np.all(np.isin(snap_ids, tangos_ids))
 
 
+def test_rvir_idx(last_halo):
+    """
+    Ensure that the index of particles at 1,2,...7 Rvir are correct.
+    """
+    psim, ph, th = last_halo
+    indices = th["Rvir_indices"]
+    tangos_ids = th.calculate("ids()")
+    assert len(indices) == 7
+    rvir_ids = tangos_ids[indices]
+    with psim.translate(-th["shrink_center"]):
+        particle_r = psim["r"]
+        for i in range(7):
+            assert particle_r[rvir_ids[i]] > (i + 1) * th["max_radius"] * pyn.units.kpc
+            assert particle_r[rvir_ids[i]] < (i + 2) * th["max_radius"] * pyn.units.kpc
+
+
 def test_virial_radii(last_halo):
     """
     Ensure that the virial radii R200c and R500c are correct.

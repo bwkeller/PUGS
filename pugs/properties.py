@@ -5,6 +5,7 @@ import pynbody
 import tangos
 from tangos.properties import LivePropertyCalculation, PropertyCalculation
 from tangos.properties.pynbody import PynbodyPropertyCalculation
+from tangos.properties.pynbody.centring import centred_calculation
 from tangos.properties.pynbody.radius import Radius
 
 
@@ -20,6 +21,30 @@ class Radius500c(Radius):
         return "critical"
 
 
+class StoreIordIndices(PynbodyPropertyCalculation):
+    """
+    This property stores the index position in the zlib_ids array of the
+    particle at between 1 and 7 Virial radii, allowing you to select how large
+    the zoom region is.  The full set is out to 8 Rvir.
+    """
+
+    names = "Rvir_indices"
+
+    @centred_calculation
+    def calculate(self, particle_data, existing_properties):
+        r_values = np.arange(1, 8) * existing_properties["max_radius"]
+        radii = np.sort(particle_data["r"])
+        return [np.argwhere(radii > r)[0] for r in r_values]
+
+    def region_specification(self, existing_properties):
+        return pynbody.filt.Sphere(
+            existing_properties["max_radius"] * 8, existing_properties["shrink_center"]
+        )
+
+    def requires_property(self):
+        return ["shrink_center", "max_radius"]
+
+
 class StoreIords(PynbodyPropertyCalculation):
     """
     This property stores the zlib compressed iorders of the particles within 2
@@ -28,16 +53,19 @@ class StoreIords(PynbodyPropertyCalculation):
 
     names = "zlib_ids"
 
+    @centred_calculation
     def calculate(self, particle_data, existing_properties):
+        radii = particle_data["r"]
+        indices = particle_data.get_index_list(particle_data.ancestor)[np.argsort(radii)]
         iords = np.frombuffer(
-            zlib.compress(particle_data.get_index_list(particle_data.ancestor).tobytes()),
+            zlib.compress(indices.tobytes()),
             dtype=np.int8,
         )
         return iords
 
     def region_specification(self, existing_properties):
         return pynbody.filt.Sphere(
-            existing_properties["max_radius"] * 2, existing_properties["shrink_center"]
+            existing_properties["max_radius"] * 8, existing_properties["shrink_center"]
         )
 
     def requires_property(self):
