@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-source config_vars
+# shellcheck source=/dev/null
+source "$1"
 
 tangos add --min-particles 500 "$SIM"
 
-tangos import-properties
+tangos import-properties numSubStruct Vmax Rmax Mhalo cNFW lambda lambdaE mbp_offset com_offset sigV c b
 
 tangos import-ahf-trees
 
