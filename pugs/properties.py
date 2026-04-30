@@ -72,7 +72,7 @@ class StoreIords(PynbodyPropertyCalculation):
         return ["shrink_center", "max_radius"]
 
 
-class VirialRatio(LivePropertyCalculation):
+class VirialRatio(PropertyCalculation):
     """
     This property calculates the Virial Ratio (2T/U) of the halo.
     """
