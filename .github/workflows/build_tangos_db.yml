@@ -17,7 +17,7 @@ jobs:
           mkdir -p $HOME/data/
           tar -xvzf NUGS128.tar.gz -C $HOME/data
           source config_vars
-          ./build_tangos.sh
+          ./build_tangos.sh config_vars
       - name: Run the tests
         run: |
           cd builder/tangos_db
