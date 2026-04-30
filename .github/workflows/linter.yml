@@ -10,6 +10,7 @@ jobs:
       - name: Build dev environment
         run: |
           pip install .[dev]
+          apt install shellcheck
       - name: Run Black formatter
         run: |
           black --check .
@@ -19,3 +20,9 @@ jobs:
       - name: Run isort to check imports
         run: |
           isort --check-only .
+      - name: Run shellcheck on the builder scripts
+        run: |
+          cd builder/tangos_db
+          shellcheck -x build_tangos.sh
+          cd ../volume_ic
+          shellcheck -x build.sh

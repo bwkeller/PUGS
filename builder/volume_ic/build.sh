@@ -29,7 +29,7 @@ cp ../../inputs/genetIC_volume.txt .
 if [ "$TEST" -eq 1 ]; then
     sed -i -e 's/2048/128/g' genetIC_volume.txt
 fi
-docker run -e OMP_NUM_THREADS=$NUM_THREADS --rm -v `pwd`:/w/ --user $(id -u):$(id -g) apontzen/genetic:1.5.0 /w/genetIC_volume.txt
+docker run -e OMP_NUM_THREADS=$NUM_THREADS --rm -v "$(pwd)":/w/ --user "$(id -u)":"$(id -g)" apontzen/genetic:1.5.0 /w/genetIC_volume.txt
 
 # Fix the 32-bit tipsy header issue
 if [ "$TEST" -eq 0 ]; then
