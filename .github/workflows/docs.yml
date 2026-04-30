@@ -30,6 +30,7 @@ jobs:
       - name: Build docs
         run: |
           cd docs
+          export BASE_URL="/PUGS"
           myst build --html
 
       - name: Upload pages artifact
