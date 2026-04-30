@@ -19,19 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: "20"
+          python-version: "3.12"
 
-      - name: Install MyST
-        run: npm install -g mystmd
+      - name: Install docs dependencies
+        run: pip install sphinx pydata-sphinx-theme myst-parser sphinx-design
 
       - name: Build docs
-        run: |
-          cd docs
-          export BASE_URL="/PUGS"
-          myst build --html
+        run: sphinx-build -b html docs docs/_build/html
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3

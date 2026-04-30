@@ -34,6 +34,13 @@ See [pugs.genetic](genetic.md) for the full function reference.
 
 ## Quick example
 
+```{toctree}
+:hidden:
+
+properties
+genetic
+```
+
 ```python
 import tangos
 import pugs.genetic as genetic

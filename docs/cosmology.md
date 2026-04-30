@@ -57,5 +57,3 @@ The default GenetIC transfer function (generated with `get_scalar_cls = F`)
 gives $\sigma_8 = 0.8117$, slightly below the Planck best-fit value of
 $0.8120$. PUGS enables the full scalar calculation, which yields
 $\sigma_8 = 0.8119$ — within 0.001 of the target.
-
----

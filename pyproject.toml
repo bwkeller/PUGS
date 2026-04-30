@@ -26,6 +26,12 @@ dev = [
     "shellcheck-py",
     "pre-commit",
     ]
+docs = [
+    "sphinx",
+    "pydata-sphinx-theme",
+    "myst-parser",
+    "sphinx-design",
+    ]
 
 [project.entry-points."tangos.property_modules"]
 properties = "pugs.properties"

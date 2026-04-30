@@ -1,7 +1,3 @@
----
-title: PUGS Documentation
----
-
 # PUGS: Portable Universal Galaxy Sampler
 
 [![build_volume_ic](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml)
@@ -28,25 +24,25 @@ conditions** for individual halos identified in the volume.
 
 ::::{grid} 1 2 2 2
 
-:::{card} Getting Started
+:::{grid-item-card} Getting Started
 :link: getting-started
 :link-type: doc
 Install PUGS and run your first build.
 :::
 
-:::{card} The Two-Stage Pipeline
+:::{grid-item-card} The Two-Stage Pipeline
 :link: pipeline/index
 :link-type: doc
 Understand the data flow from cosmological parameters to halo catalogs.
 :::
 
-:::{card} API Reference
+:::{grid-item-card} API Reference
 :link: api/index
 :link-type: doc
 Full reference for `pugs.properties` and `pugs.genetic`.
 :::
 
-:::{card} Cosmological Background
+:::{grid-item-card} Cosmological Background
 :link: cosmology
 :link-type: doc
 Planck 2018 parameters, power spectrum, and transfer function details.
@@ -57,6 +53,18 @@ Planck 2018 parameters, power spectrum, and transfer function details.
 ---
 
 ## Package layout
+
+```{toctree}
+:hidden:
+:maxdepth: 2
+
+getting-started
+pipeline/index
+api/index
+cosmology
+NUGS2048
+development
+```
 
 ```
 pugs/

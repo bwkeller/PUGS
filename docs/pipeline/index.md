@@ -92,3 +92,10 @@ pugs.db  ──► pugs.genetic.write_particle_ids()  ──► id_file.txt
 ```
 
 See [pugs.genetic](../api/genetic.md) for the API.
+
+```{toctree}
+:hidden:
+
+volume-ic
+tangos-db
+```
