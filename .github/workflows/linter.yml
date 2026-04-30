@@ -10,7 +10,7 @@ jobs:
       - name: Build dev environment
         run: |
           pip install .[dev]
-          apt install shellcheck
+          sudo apt install shellcheck shfmt
       - name: Run Black formatter
         run: |
           black --check .
@@ -20,9 +20,11 @@ jobs:
       - name: Run isort to check imports
         run: |
           isort --check-only .
-      - name: Run shellcheck on the builder scripts
+      - name: Run shfmt and shellcheck on the builder scripts
         run: |
           cd builder/tangos_db
+          shfmt -w build_tangos.sh
           shellcheck -x build_tangos.sh
           cd ../volume_ic
+          shfmt -w build.sh
           shellcheck -x build.sh
