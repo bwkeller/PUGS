@@ -29,6 +29,7 @@ project:
         - file: api/properties.md
         - file: api/genetic.md
     - file: cosmology.md
+    - file: NUGS2048.md
     - file: development.md
 site:
   template: book-theme
