@@ -72,6 +72,20 @@ class StoreIords(PynbodyPropertyCalculation):
         return ["shrink_center", "max_radius"]
 
 
+class VirialRatio(LivePropertyCalculation):
+    """
+    This property calculates the Virial Ratio (2T/U) of the halo.
+    """
+
+    names = "virial_ratio"
+
+    def calculate(self, _, halo):
+        return 2 * halo["Ekin"] / halo["Epot"]
+
+    def requires_property(self):
+        return ["Ekin", "Epot"]
+
+
 class GetIords(LivePropertyCalculation):
     """
     This property loads and decompresses the zlib compressed iorders of the
