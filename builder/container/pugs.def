@@ -44,7 +44,7 @@ From: python:3.13-bookworm
     rm -rf /var/lib/apt/lists/*
 
     # Build GenetIC from source against the system FFTW/GSL.
-    git clone --depth 1 --branch "${GENETIC_VERSION}" \
+    git clone --recurse-submodules --branch "${GENETIC_VERSION}" \
         https://github.com/pynbody/genetIC.git /opt/genetIC
     make -C /opt/genetIC/genetIC -j "$(nproc)"
     install -m 0755 /opt/genetIC/genetIC/genetIC /usr/local/bin/genetIC
