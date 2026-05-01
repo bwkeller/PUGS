@@ -2,6 +2,7 @@
 
 [![build_volume_ic](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml)
 [![Tangos DB Build Test](https://github.com/bwkeller/PUGS/actions/workflows/build_tangos_db.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_tangos_db.yml)
+[![Container Build Test](https://github.com/bwkeller/PUGS/actions/workflows/build_container.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_container.yml)
 [![linter](https://github.com/bwkeller/PUGS/actions/workflows/linter.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/linter.yml)
 
 PUGS is a Python package for generating and analyzing cosmological N-body simulation data.
@@ -73,7 +74,8 @@ pugs/
 
 builder/
 ├── volume_ic/      # Stage 1 — Volume initial conditions
-└── tangos_db/      # Stage 2 — TANGOS database construction
+├── tangos_db/      # Stage 2 — TANGOS database construction
+└── container/      # Stage 3 — Apptainer/Singularity packaging
 
 inputs/
 ├── planck_2018_CAMB.ini         # CAMB cosmology configuration

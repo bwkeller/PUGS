@@ -74,6 +74,34 @@ See [TANGOS Database](tangos-db.md) for the full description.
 
 ---
 
+## Stage 3 — Containerization
+
+**Directory:** `builder/container/`
+
+Bundles the Python stack, GenetIC, and the TANGOS halo catalog into a single
+Apptainer/Singularity image so the pipeline can be moved to any HPC site
+without rebuilding the dependency tree.
+
+```
+builder/container/pugs.def
+            +
+   pugs/, inputs/, builder/* ...
+            +
+        pugs.db
+              │
+              ▼
+    build_container.sh -d pugs.db
+              │
+              ▼
+        pugs.sif  (portable SIF)
+```
+
+**Key output:** `pugs.sif` — the portable, content-addressed container image.
+
+See [Container Builder](container.md) for the full description.
+
+---
+
 ## Zoom-in ICs
 
 After the TANGOS database is built, individual halos can be used to generate
@@ -98,4 +126,5 @@ See [pugs.genetic](../api/genetic.md) for the API.
 
 volume-ic
 tangos-db
+container
 ```
