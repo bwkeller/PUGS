@@ -17,7 +17,7 @@ jobs:
         run: |
           cd builder/container
           apptainer exec pugs.sif python -c "import tangos, pynbody, pugs"
-          apptainer exec pugs.sif command -v genetIC
+          apptainer exec pugs.sif genetIC
           apptainer exec pugs.sif test -f /opt/PUGS/data/pugs.db
           test "$(apptainer exec pugs.sif printenv TANGOS_DB_CONNECTION)" = "/opt/PUGS/data/pugs.db"
           test "$(apptainer exec pugs.sif printenv TANGOS_SIMULATION_FOLDER)" = "/data/sims"
