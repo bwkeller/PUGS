@@ -1,0 +1,24 @@
+name: Container Build Test
+on: [push, pull_request]
+jobs:
+  build_container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.6
+      - name: Build the container with the placeholder DB
+        run: |
+          cd builder/container
+          ./build_container.sh
+      - name: Smoke-test the container
+        run: |
+          cd builder/container
+          apptainer exec pugs.sif python -c "import tangos, pynbody, pugs"
+          apptainer exec pugs.sif command -v genetIC
+          apptainer exec pugs.sif test -f /opt/PUGS/data/pugs.db
+          test "$(apptainer exec pugs.sif printenv TANGOS_DB_CONNECTION)" = "/opt/PUGS/data/pugs.db"
+          test "$(apptainer exec pugs.sif printenv TANGOS_SIMULATION_FOLDER)" = "/data/sims"
+          test "$(apptainer exec pugs.sif printenv PUGS_HOME)" = "/opt/PUGS"
