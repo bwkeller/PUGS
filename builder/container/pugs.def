@@ -1,0 +1,113 @@
+Bootstrap: docker
+From: python:3.13-bookworm
+
+# The build_container.sh wrapper stages the bundled TANGOS database at
+# _pugs.db.staged before invoking `apptainer build`. The real database is
+# expected to be supplied via `./build_container.sh -d /path/to/pugs.db`;
+# if no path is supplied the wrapper stages pugs.db.placeholder so the
+# container builds end-to-end even before the 2048^3 catalog is ready.
+
+%files
+    _pugs.db.staged                                /opt/PUGS/data/pugs.db
+    ../../pugs                                     /opt/PUGS/pugs
+    ../../inputs                                   /opt/PUGS/inputs
+    ../../pyproject.toml                           /opt/PUGS/pyproject.toml
+    ../../README.md                                /opt/PUGS/README.md
+    ../../builder/volume_ic/build.sh               /opt/PUGS/builder/volume_ic/build.sh
+    ../../builder/volume_ic/fix_header.py          /opt/PUGS/builder/volume_ic/fix_header.py
+    ../../builder/volume_ic/.checksums.txt         /opt/PUGS/builder/volume_ic/.checksums.txt
+    ../../builder/tangos_db/build_tangos.sh        /opt/PUGS/builder/tangos_db/build_tangos.sh
+    ../../builder/tangos_db/config_vars            /opt/PUGS/builder/tangos_db/config_vars
+    ../../builder/tangos_db/tests/test_counts.py   /opt/PUGS/builder/tangos_db/tests/test_counts.py
+    ../../builder/tangos_db/tests/test_properties.py /opt/PUGS/builder/tangos_db/tests/test_properties.py
+
+%post
+    set -eux
+
+    # The version of genetIC that the bundled halo catalog was generated with.
+    # Bump this in lockstep with the Docker tag used by builder/volume_ic/build.sh.
+    GENETIC_VERSION="v1.5.0"
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        gfortran \
+        git \
+        libfftw3-dev \
+        libgsl-dev \
+        libhdf5-dev \
+        pkg-config \
+        wget
+    rm -rf /var/lib/apt/lists/*
+
+    # Build GenetIC from source against the system FFTW/GSL.
+    git clone --depth 1 --branch "${GENETIC_VERSION}" \
+        https://github.com/pynbody/genetIC.git /opt/genetIC
+    make -C /opt/genetIC/genetIC -j "$(nproc)"
+    install -m 0755 /opt/genetIC/genetIC/genetIC /usr/local/bin/genetIC
+
+    # Install the PUGS package and its scientific Python stack.
+    pip install --no-cache-dir --upgrade pip
+    pip install --no-cache-dir /opt/PUGS[dev]
+
+    # Mount points for runtime-supplied data.
+    mkdir -p /data/sims /data/zoom_ics
+
+    # The build_container.sh wrapper guarantees this file is present, but we
+    # check here so a hand-driven `apptainer build` fails loudly rather than
+    # producing a container with a missing database.
+    test -f /opt/PUGS/data/pugs.db
+
+%environment
+    export TANGOS_DB_CONNECTION=/opt/PUGS/data/pugs.db
+    export TANGOS_SIMULATION_FOLDER=/data/sims
+    export PUGS_HOME=/opt/PUGS
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    if [ "$#" -eq 0 ]; then
+        exec /bin/bash
+    else
+        exec "$@"
+    fi
+
+%labels
+    Author      BW Keller <bkeller1@memphis.edu>
+    Project     PUGS: Portable Universal Galaxy Sampler
+    Source      https://github.com/bwkeller/PUGS
+
+%help
+    PUGS - Portable Universal Galaxy Sampler
+
+    This container bundles the PUGS pipeline together with the pre-computed
+    TANGOS halo catalog from the 2048^3 collisionless volume:
+
+      genetIC                      cosmological zoom-in IC generator
+      tangos                       halo database analysis framework
+      pugs (Python package)        halo property calculators and zoom helpers
+      /opt/PUGS/data/pugs.db       pre-computed TANGOS halo catalog
+
+    Quick start:
+
+        # Drop into an interactive shell with the environment configured
+        apptainer run pugs.sif
+
+        # Inspect the bundled halo catalog
+        apptainer exec pugs.sif tangos list-simulations
+
+        # Generate a zoom-in IC for a TANGOS halo (writes id_file.txt)
+        apptainer exec pugs.sif python -c \
+            "from pugs.genetic import write_particle_ids; write_particle_ids(1)"
+
+    To analyse simulation snapshots living on the host filesystem, bind-mount
+    them to /data/sims (the path TANGOS_SIMULATION_FOLDER points at):
+
+        apptainer exec -B /path/to/sims:/data/sims pugs.sif tangos write ...
+
+    Environment variables (already set inside the container):
+        TANGOS_DB_CONNECTION=/opt/PUGS/data/pugs.db
+        TANGOS_SIMULATION_FOLDER=/data/sims
+        PUGS_HOME=/opt/PUGS
