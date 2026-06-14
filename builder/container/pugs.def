@@ -17,7 +17,7 @@ From: python:3.13-bookworm
     ../../builder/volume_ic/fix_header.py          /opt/PUGS/builder/volume_ic/fix_header.py
     ../../builder/volume_ic/.checksums.txt         /opt/PUGS/builder/volume_ic/.checksums.txt
     ../../builder/tangos_db/build_tangos.sh        /opt/PUGS/builder/tangos_db/build_tangos.sh
-    ../../builder/tangos_db/config_vars            /opt/PUGS/builder/tangos_db/config_vars
+    ../../builder/tangos_db/test_vars            /opt/PUGS/builder/tangos_db/test_vars
     ../../builder/tangos_db/tests/test_counts.py   /opt/PUGS/builder/tangos_db/tests/test_counts.py
     ../../builder/tangos_db/tests/test_properties.py /opt/PUGS/builder/tangos_db/tests/test_properties.py
 
