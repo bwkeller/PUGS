@@ -1,0 +1,10 @@
+PUGS TANGOS database placeholder.
+
+This file is bundled into the container by build_container.sh when no real
+database is supplied via the -d flag. It is NOT a valid SQLite file: any
+attempt to use TANGOS against /opt/PUGS/data/pugs.db inside a container
+built from this placeholder will fail with a "file is not a database" error.
+
+Replace with the real 2048^3 catalog by running:
+
+    ./build_container.sh -d /path/to/real/pugs.db
