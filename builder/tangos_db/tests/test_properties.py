@@ -13,7 +13,19 @@ def last_halo():
     h = sim.halos()
     return sim, h[0], snap.halos[0]
 
-
+def test_AHF_consistency():
+    for ts in tangos.get_simulation("NUGS128").timesteps:
+        sim = pyn.load(ts.filename)
+        little_h = sim.properties['h']
+        a = sim.properties['a']
+        AHF_mass, tangos_mass = ts.calculate_all("Mhalo", "finder_mass")
+        AHF_radius, tangos_radius = ts.calculate_all("Rhalo", "max_radius")
+        if AHF_mass.size > 0 and tangos_mass.size > 0:
+            assert_allclose(AHF_mass/little_h, tangos_mass, rtol=1e-3)
+        if AHF_radius.size > 0 and tangos_radius.size > 0:
+            # The tolerance here is relatively high because AHF unbinds particles
+            assert_allclose(a*AHF_radius/little_h, tangos_radius, rtol=0.5)
+        
 def test_property_counts():
     for ts in tangos.get_simulation("NUGS128").timesteps:
         halo_count = ts.halos.count()
