@@ -150,16 +150,16 @@ class MassPercentileRedshifts(PropertyCalculation):
 
     def calculate(self, _, halo):
         m, z = tangos.get_halo(self.paths[halo.halo_number - 1]).calculate_for_progenitors(
-            "M200", "z()"
+            "finder_mass", "z()"
         )
         return (
-            z[m > 0.25 * halo["M200"]][-1],
-            z[m > 0.5 * halo["M200"]][-1],
-            z[m > 0.75 * halo["M200"]][-1],
+            z[m > 0.25 * halo["finder_mass"]][-1],
+            z[m > 0.5 * halo["finder_mass"]][-1],
+            z[m > 0.75 * halo["finder_mass"]][-1],
         )
 
     def requires_property(self):
-        return ["M200"]
+        return ["finder_mass"]
 
 
 class MergerHistory(PropertyCalculation):
@@ -176,7 +176,7 @@ class MergerHistory(PropertyCalculation):
             self.paths[halo.halo_number - 1]
         ).calculate_for_descendants(
             "path()",
-            "M200",
+            "finder_mass",
             "z()",
             strategy=tangos.relation_finding.MultiHopAllProgenitorsStrategy,
         )
@@ -200,4 +200,4 @@ class MergerHistory(PropertyCalculation):
         return N_mm, z_lmm
 
     def requires_property(self):
-        return ["M200"]
+        return ["finder_mass"]
