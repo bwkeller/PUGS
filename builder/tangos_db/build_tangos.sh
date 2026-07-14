@@ -6,7 +6,7 @@ source "$1"
 
 tangos add --min-particles 500 "$SIM"
 
-tangos import-properties hostHalo numSubStruct Vmax Rmax Mhalo cNFW lambda lambdaE mbp_offset com_offset sigV c b Ekin Epot
+tangos import-properties hostHalo numSubStruct Mhalo Rhalo Rmax r2 mbp_offset com_offset Vmax v_esc sigV lambda lambdaE Lx Ly Lz b c Eax Eay Eaz Ebx Eby Ebz Ecx Ecy Ecz ovdens Ekin Epot SurfP Phi0 cNFW
 
 tangos import-ahf-trees
 
