@@ -75,10 +75,16 @@ def test_virial_radii(last_halo):
     Ensure that the virial radii R200c and R500c are correct.
     """
     psim, ph, th = last_halo
-    filt = pyn.filt.Sphere(th["max_radius"] * 3, th["shrink_center"])
-    snap_r500c = pyn.analysis.halo.virial_radius(
-        psim[filt], cen=th["shrink_center"], overden=500, rho_def="critical"
-    )
+    # Match how TANGOS computes the radius: recenter the snapshot on the
+    # shrink_center first, then call virial_radius without `cen`. Passing `cen`
+    # instead leaves the raw box coordinates in place, which changes the
+    # bisection bracket (r_max = pos.max() - pos.min()) that virial_radius
+    # derives internally and yields a root that differs at the ~1e-4 level.
+    with psim.translate(-th["shrink_center"]):
+        sub = psim[pyn.filt.Sphere(th["max_radius"] * 3)]
+        snap_r500c = pyn.analysis.halo.virial_radius(
+            sub, overden=500, rho_def="critical"
+        )
     tangos_r200c = th["max_radius"]
     tangos_r500c = th["R500"]
     assert tangos_r500c < tangos_r200c
