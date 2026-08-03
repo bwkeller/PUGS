@@ -17,7 +17,7 @@ tangos import-ahf-trees
 
 tangos remove-duplicates
 
-"$RUNNER" tangos write finder_mass shrink_center max_radius M200 --for "$SIM" --with-prerequisites --backend mpi4py --load-mode server-shared-mem
+"$RUNNER" tangos write finder_mass shrink_center max_radius R200 R500 M500 M200 --for "$SIM" --with-prerequisites --backend mpi4py --load-mode server-shared-mem
 
 # write needed properties for only the last (z=0) snapshot
 tangos write zlib_ids Rvir_indices N_mm z_lmm z25_mass z50_mass z75_mass --with-prerequisites --for "$SIM" --latest

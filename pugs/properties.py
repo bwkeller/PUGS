@@ -9,6 +9,18 @@ from tangos.properties.pynbody.centring import centred_calculation
 from tangos.properties.pynbody.radius import Radius
 
 
+class Radius200c(Radius):
+    names = "R200"
+
+    @staticmethod
+    def _get_overdensity_contrast():
+        return 200
+
+    @staticmethod
+    def _get_reference_definition():
+        return "critical"
+
+
 class Radius500c(Radius):
     names = "R500"
 
@@ -114,6 +126,20 @@ class Mass500c(PynbodyPropertyCalculation):
 
     def requires_property(self):
         return ["R500"]
+
+
+class Mass200c(PynbodyPropertyCalculation):
+    names = "M200"
+
+    def calculate(self, particle_data, existing_properties):
+        from pynbody.analysis import cosmology
+
+        rho_crit = cosmology.rho_crit(particle_data, unit="Msol kpc**-3")
+        m_crit = 4 / 3 * np.pi * rho_crit
+        return 200 * m_crit * existing_properties["R200"] ** 3
+
+    def requires_property(self):
+        return ["R200"]
 
 
 class MassPercentileRedshifts(PropertyCalculation):
