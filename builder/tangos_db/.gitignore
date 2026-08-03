@@ -1,3 +1,4 @@
 *.tar.gz
+test.db
 pugs.db
 __pycache__
