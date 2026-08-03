@@ -116,16 +116,6 @@ class Mass500c(PynbodyPropertyCalculation):
         return ["R500"]
 
 
-class Mass200c(PropertyCalculation):
-    names = "M200"
-
-    def calculate(self, particle_data, existing_properties):
-        return existing_properties["finder_mass"]
-
-    def requires_property(self):
-        return ["finder_mass"]
-
-
 class MassPercentileRedshifts(PropertyCalculation):
     names = "z25_mass", "z50_mass", "z75_mass"
 
@@ -135,16 +125,16 @@ class MassPercentileRedshifts(PropertyCalculation):
 
     def calculate(self, _, halo):
         m, z = tangos.get_halo(self.paths[halo.halo_number - 1]).calculate_for_progenitors(
-            "M200", "z()"
+            "Mhalo", "z()"
         )
         return (
-            z[m > 0.25 * halo["M200"]][-1],
-            z[m > 0.5 * halo["M200"]][-1],
-            z[m > 0.75 * halo["M200"]][-1],
+            z[m > 0.25 * halo["Mhalo"]][-1],
+            z[m > 0.5 * halo["Mhalo"]][-1],
+            z[m > 0.75 * halo["Mhalo"]][-1],
         )
 
     def requires_property(self):
-        return ["M200"]
+        return ["Mhalo"]
 
 
 class MergerHistory(PropertyCalculation):
@@ -161,7 +151,7 @@ class MergerHistory(PropertyCalculation):
             self.paths[halo.halo_number - 1]
         ).calculate_for_descendants(
             "path()",
-            "M200",
+            "Mhalo",
             "z()",
             strategy=tangos.relation_finding.MultiHopAllProgenitorsStrategy,
         )
@@ -185,4 +175,4 @@ class MergerHistory(PropertyCalculation):
         return N_mm, z_lmm
 
     def requires_property(self):
-        return ["M200"]
+        return ["Mhalo"]
