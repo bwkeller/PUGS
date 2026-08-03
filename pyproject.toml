@@ -10,8 +10,8 @@ description = "PUGS: The Portable Universal Galaxy Sampler"
 readme = "README.md"
 dependencies = [
     "pip==25.2",
-    "tangos>1.10.0",
-    "pynbody>2.3.2",
+    "tangos@git+https://github.com/pynbody/tangos.git@master",
+    "pynbody @ git+https://github.com/pynbody/pynbody.git@master"
 ]
 dynamic = ["version"]
 
