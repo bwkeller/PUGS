@@ -2,11 +2,12 @@ import zlib
 
 import numpy as np
 import pynbody
-import tangos
 from tangos.properties import LivePropertyCalculation, PropertyCalculation
 from tangos.properties.pynbody import PynbodyPropertyCalculation
 from tangos.properties.pynbody.centring import centred_calculation
 from tangos.properties.pynbody.radius import Radius
+
+from . import merger_forest
 
 
 class Radius200c(Radius):
@@ -142,63 +143,66 @@ class Mass200c(PynbodyPropertyCalculation):
         return ["R200"]
 
 
-class MassPercentileRedshifts(PropertyCalculation):
+class MassPercentileRedshifts(LivePropertyCalculation):
+    """
+    Redshifts at which the halo's main branch last held 25%, 50% and 75% of its
+    final mass.  The whole timestep is computed in `preloop` from the bulk
+    merger forest; walking the tree per halo costs thousands of SQL round trips
+    each and leaks SQLAlchemy state on every call.
+    """
+
     names = "z25_mass", "z50_mass", "z75_mass"
 
+    fractions = (0.25, 0.5, 0.75)
+
     @classmethod
-    def preloop(self, sim, db_timestep):
-        self.paths = db_timestep.calculate_all("path()")[0]
+    def preloop(cls, sim, db_timestep):
+        forest, indices, cls.positions, cls.known = _forest_for_timestep(db_timestep)
+        cls.redshifts = forest.mass_percentile_redshifts(
+            np.where(indices < 0, 0, indices), cls.fractions
+        )
 
     def calculate(self, _, halo):
-        m, z = tangos.get_halo(self.paths[halo.halo_number - 1]).calculate_for_progenitors(
-            "finder_mass", "z()"
-        )
-        return (
-            z[m > 0.25 * halo["finder_mass"]][-1],
-            z[m > 0.5 * halo["finder_mass"]][-1],
-            z[m > 0.75 * halo["finder_mass"]][-1],
-        )
-
-    def requires_property(self):
-        return ["finder_mass"]
+        i = self.positions[halo.id]
+        if not self.known[i]:
+            return None, None, None
+        return tuple(float(z) for z in self.redshifts[:, i])
 
 
-class MergerHistory(PropertyCalculation):
+class MergerHistory(LivePropertyCalculation):
+    """
+    Number of major mergers in the halo's progenitor tree, and the redshift of
+    the most recent one (-1 if there was none).  As for
+    `MassPercentileRedshifts`, this is computed for the whole timestep at once.
+    """
+
     names = "N_mm", "z_lmm"
 
     @classmethod
-    def preloop(self, sim, db_timestep):
-        self.paths = db_timestep.calculate_all("path()")[0]
+    def preloop(cls, sim, db_timestep):
+        forest, indices, cls.positions, cls.known = _forest_for_timestep(db_timestep)
+        safe = np.where(indices < 0, 0, indices)
+        cls.n_mm = forest.n_mm[safe]
+        cls.z_lmm = forest.z_lmm[safe]
 
     def calculate(self, _, halo):
-        N_mm = 0
-        z_lmm = -1.0
-        names, masses, z = tangos.get_halo(
-            self.paths[halo.halo_number - 1]
-        ).calculate_for_descendants(
-            "path()",
-            "finder_mass",
-            "z()",
-            strategy=tangos.relation_finding.MultiHopAllProgenitorsStrategy,
-        )
-        all_z = np.unique(z)
-        # Iterate through the redshifts in reverse
-        for z_i in all_z[-1::-1]:
-            this_z = z == z_i
-            if (this_z).sum() < 2:
-                continue
-            descends = np.array([tangos.get_halo(n).next for n in names[this_z]])
-            seen = set()
-            merged = {x for x in descends if x in seen or seen.add(x)}
-            if len(merged) == 0:
-                continue
-            for d in merged:
-                merge_mass = masses[this_z][descends == d]
-                if merge_mass.max() * 0.25 > np.sort(merge_mass)[-2]:
-                    continue
-                N_mm += 1
-                z_lmm = z_i
-        return N_mm, z_lmm
+        i = self.positions[halo.id]
+        if not self.known[i]:
+            return None, None
+        return int(self.n_mm[i]), float(self.z_lmm[i])
 
-    def requires_property(self):
-        return ["finder_mass"]
+
+def _forest_for_timestep(db_timestep):
+    """Bulk merger forest for a timestep's simulation, plus the lookups needed
+    to go from a halo to its row in the per-timestep result arrays.
+
+    Returns the forest; the forest index of each halo in the timestep; a map
+    from database id to row; and a mask of the halos we can answer for, which
+    excludes any halo the forest does not know about or has no mass for.
+    """
+    forest = merger_forest.get_merger_forest(db_timestep.simulation)
+    ids = db_timestep.calculate_all("dbid()", object_type="halo")[0]
+    positions = {int(halo_id): i for i, halo_id in enumerate(ids)}
+    indices = forest.index_of(ids)
+    known = (indices >= 0) & np.isfinite(forest.mass[np.where(indices < 0, 0, indices)])
+    return forest, indices, positions, known
