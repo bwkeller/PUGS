@@ -1,0 +1,442 @@
+# PUGS halo catalog data dictionary.
+#
+# This file is the authoritative description of every column in the Parquet
+# halo catalog.  It is hand-maintained and shipped inside the package; the
+# writer copies `dtype`, `unit`, `system` and `description` onto the Arrow
+# schema so a catalog is self-describing even when this file is not at hand.
+#
+# Bump `schema_version` whenever a column is renamed, removed, or has its unit
+# changed.  `pugs.io.read_catalog` refuses to read a catalog whose version does
+# not match, which is what stops a stale sidecar from silently supplying the
+# wrong units.  Adding a new column is backwards compatible and does not
+# require a bump.
+#
+# `dtype` fixes the Arrow type of the column.  The schema is built from this
+# file rather than inferred from whatever happens to be in the catalog, so that
+# a property missing from one snapshot cannot change the schema of the file
+# written for it.
+#
+# Units are astropy-parseable strings.  "dimensionless" means exactly that.
+#
+# NOTE ON UNIT SYSTEMS: columns read verbatim from AHF keep AHF's own
+# convention -- comoving lengths, h-scaled masses and lengths.  Columns PUGS
+# measures from the snapshot are in physical units with h divided out.  The two
+# groups are not directly comparable; see `system` on each column.
+#
+# Version 2 replaced the TANGOS-derived catalog with one built directly from
+# the AHF output.  `halo_number` (a TANGOS row counter, offset by one from
+# AHF's own id) became `finder_id`, which is AHF's id itself; `halo_id` became
+# a deterministic `snapshot_index * 2**32 + finder_id` rather than a database
+# row id.
+
+schema_version = 2
+
+# ---------------------------------------------------------------- identity --
+
+[columns.halo_id]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "Globally unique halo id, snapshot_index * 2**32 + finder_id; deterministic, so a rebuilt catalog refers to the same halos"
+
+[columns.finder_id]
+dtype = "int64"
+unit = "dimensionless"
+system = "finder"
+description = "AHF's own halo id within its snapshot; not unique across snapshots"
+
+[columns.snapshot]
+dtype = "string"
+unit = "dimensionless"
+system = "pugs"
+description = "Snapshot the halo belongs to, e.g. 'DM128.02048'"
+
+[columns.snapshot_index]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "0-based index of the snapshot in time order; the final snapshot is the largest"
+
+[columns.z]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Redshift of the snapshot, from the snapshot header"
+
+[columns.a]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Scale factor of the snapshot, 1/(1+z)"
+
+# ------------------------------------ measured by PUGS from the snapshot ----
+
+[columns.finder_mass]
+dtype = "float64"
+unit = "Msol"
+system = "physical"
+description = "Total mass of the particles AHF assigned to this halo"
+
+[columns.max_radius]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Distance from shrink_center to the outermost halo-finder particle. This is the extent of AHF's particle set, NOT an overdensity radius; it is the radius the particle-ID regions are defined in multiples of"
+
+[columns.shrink_center_x]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Halo centre from the shrinking-sphere algorithm, x component, in box coordinates"
+
+[columns.shrink_center_y]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Halo centre from the shrinking-sphere algorithm, y component, in box coordinates"
+
+[columns.shrink_center_z]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Halo centre from the shrinking-sphere algorithm, z component, in box coordinates"
+
+[columns.R200]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Radius enclosing 200x the critical density, by bisection over all particles in the region"
+
+[columns.R500]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Radius enclosing 500x the critical density, by bisection over all particles in the region"
+
+[columns.M200]
+dtype = "float64"
+unit = "Msol"
+system = "physical"
+description = "Mass within R200c, from 200 * rho_crit * 4/3 pi R200^3"
+
+[columns.M500]
+dtype = "float64"
+unit = "Msol"
+system = "physical"
+description = "Mass within R500c, from 500 * rho_crit * 4/3 pi R500^3"
+
+# ----------------------------------------- merger tree and assembly ---------
+
+[columns.main_progenitor_id]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "halo_id of this halo's main progenitor in the previous snapshot, by AHF merit; null if it has none"
+
+[columns.descendant_id]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "halo_id of the halo this one merges into in the next snapshot; null if it has none"
+
+[columns.n_progenitors]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "Number of progenitors contributing at least MIN_SHARED_FRACTION of themselves to this halo"
+
+[columns.N_mm]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "Number of major mergers anywhere in this halo's progenitor tree"
+
+[columns.z_lmm]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Redshift of the last major merger in the progenitor tree; -1 when the halo has had none"
+
+[columns.z25_mass]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Highest redshift at which the main branch still held 25% of this halo's mass"
+
+[columns.z50_mass]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Highest redshift at which the main branch still held 50% of this halo's mass"
+
+[columns.z75_mass]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Highest redshift at which the main branch still held 75% of this halo's mass"
+
+# ------------------------------------------ read verbatim from AHF_halos ----
+# Comoving lengths, h-scaled masses/lengths.  Do not mix with the physical
+# columns above without converting.  The _gas and _star column families AHF
+# also writes are omitted: this is a collisionless volume and they are all
+# zero.
+
+[columns.hostHalo]
+dtype = "int64"
+unit = "dimensionless"
+system = "finder"
+description = "AHF id of the host halo, or -1 if this halo is not a subhalo"
+
+[columns.numSubStruct]
+dtype = "int64"
+unit = "dimensionless"
+system = "finder"
+description = "Number of substructures AHF found inside this halo"
+
+[columns.Mhalo]
+dtype = "float64"
+unit = "Msol / littleh"
+system = "finder"
+description = "Halo mass as reported by AHF"
+
+[columns.npart]
+dtype = "int64"
+unit = "dimensionless"
+system = "finder"
+description = "Number of particles AHF assigned to this halo"
+
+[columns.Xc]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Halo centre x, comoving box coordinate"
+
+[columns.Yc]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Halo centre y, comoving box coordinate"
+
+[columns.Zc]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Halo centre z, comoving box coordinate"
+
+[columns.VXc]
+dtype = "float64"
+unit = "km / s"
+system = "finder"
+description = "Bulk velocity x"
+
+[columns.VYc]
+dtype = "float64"
+unit = "km / s"
+system = "finder"
+description = "Bulk velocity y"
+
+[columns.VZc]
+dtype = "float64"
+unit = "km / s"
+system = "finder"
+description = "Bulk velocity z"
+
+[columns.Rhalo]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Halo radius as reported by AHF (comoving)"
+
+[columns.Rmax]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Radius at which the circular velocity peaks (comoving)"
+
+[columns.r2]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "NFW scale radius from the AHF fit (comoving)"
+
+[columns.mbp_offset]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Offset between the halo centre and its most bound particle (comoving)"
+
+[columns.com_offset]
+dtype = "float64"
+unit = "kpc / littleh"
+system = "finder"
+description = "Offset between the halo centre and its centre of mass (comoving)"
+
+[columns.Vmax]
+dtype = "float64"
+unit = "km / s"
+system = "finder"
+description = "Peak circular velocity"
+
+[columns.v_esc]
+dtype = "float64"
+unit = "km / s"
+system = "finder"
+description = "Escape velocity at the halo radius"
+
+[columns.sigV]
+dtype = "float64"
+unit = "km / s"
+system = "finder"
+description = "One-dimensional velocity dispersion"
+
+[columns.lambda]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Bullock spin parameter"
+
+[columns.lambdaE]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Peebles spin parameter, using the halo energy"
+
+[columns.Lx]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "x component of the unit angular momentum vector"
+
+[columns.Ly]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "y component of the unit angular momentum vector"
+
+[columns.Lz]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "z component of the unit angular momentum vector"
+
+[columns.b]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Intermediate-to-major axis ratio of the halo shape tensor"
+
+[columns.c]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Minor-to-major axis ratio of the halo shape tensor"
+
+[columns.Eax]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "x component of the major axis eigenvector"
+
+[columns.Eay]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "y component of the major axis eigenvector"
+
+[columns.Eaz]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "z component of the major axis eigenvector"
+
+[columns.Ebx]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "x component of the intermediate axis eigenvector"
+
+[columns.Eby]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "y component of the intermediate axis eigenvector"
+
+[columns.Ebz]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "z component of the intermediate axis eigenvector"
+
+[columns.Ecx]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "x component of the minor axis eigenvector"
+
+[columns.Ecy]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "y component of the minor axis eigenvector"
+
+[columns.Ecz]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "z component of the minor axis eigenvector"
+
+[columns.ovdens]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Overdensity of the halo relative to the reference density AHF used"
+
+[columns.nbins]
+dtype = "int64"
+unit = "dimensionless"
+system = "finder"
+description = "Number of radial bins AHF used for the profile fits"
+
+[columns.fMhires]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Fraction of the halo mass in high-resolution particles; 1 throughout a uniform volume"
+
+[columns.Ekin]
+dtype = "float64"
+unit = "Msol km2 / (littleh s2)"
+system = "finder"
+description = "Total kinetic energy of the halo particles"
+
+[columns.Epot]
+dtype = "float64"
+unit = "Msol km2 / (littleh s2)"
+system = "finder"
+description = "Total potential energy of the halo particles"
+
+[columns.SurfP]
+dtype = "float64"
+unit = "Msol km2 / (littleh s2)"
+system = "finder"
+description = "Surface pressure term in the virial equation"
+
+[columns.Phi0]
+dtype = "float64"
+unit = "km2 / s2"
+system = "finder"
+description = "Potential normalisation used by AHF"
+
+[columns.cNFW]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "NFW concentration from the AHF fit"
+
+# --------------------------------------------------------------- derived ----
+
+[columns.virial_ratio]
+dtype = "float64"
+unit = "dimensionless"
+system = "finder"
+description = "Virial ratio 2T/U from the AHF Ekin and Epot columns"

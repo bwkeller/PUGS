@@ -1,14 +1,14 @@
 Bootstrap: docker
 From: python:3.13-bookworm
 
-# The build_container.sh wrapper stages the bundled TANGOS database at
-# _pugs.db.staged before invoking `apptainer build`. The real database is
-# expected to be supplied via `./build_container.sh -d /path/to/pugs.db`;
-# if no path is supplied the wrapper stages pugs.db.placeholder so the
+# The build_container.sh wrapper stages the bundled Parquet halo catalog at
+# _catalog.staged before invoking `apptainer build`. The real catalog is
+# expected to be supplied via `./build_container.sh -c /path/to/catalog`;
+# if no path is supplied the wrapper stages catalog.placeholder so the
 # container builds end-to-end even before the 2048^3 catalog is ready.
 
 %files
-    _pugs.db.staged                                /opt/PUGS/data/pugs.db
+    _catalog.staged                                /opt/PUGS/data/catalog
     ../../pugs                                     /opt/PUGS/pugs
     ../../inputs                                   /opt/PUGS/inputs
     ../../pyproject.toml                           /opt/PUGS/pyproject.toml
@@ -16,10 +16,8 @@ From: python:3.13-bookworm
     ../../builder/volume_ic/build.sh               /opt/PUGS/builder/volume_ic/build.sh
     ../../builder/volume_ic/fix_header.py          /opt/PUGS/builder/volume_ic/fix_header.py
     ../../builder/volume_ic/.checksums.txt         /opt/PUGS/builder/volume_ic/.checksums.txt
-    ../../builder/tangos_db/build_tangos.sh        /opt/PUGS/builder/tangos_db/build_tangos.sh
-    ../../builder/tangos_db/test_vars            /opt/PUGS/builder/tangos_db/test_vars
-    ../../builder/tangos_db/tests/test_counts.py   /opt/PUGS/builder/tangos_db/tests/test_counts.py
-    ../../builder/tangos_db/tests/test_properties.py /opt/PUGS/builder/tangos_db/tests/test_properties.py
+    ../../builder/catalog/build_catalog.sh         /opt/PUGS/builder/catalog/build_catalog.sh
+    ../../builder/catalog/test_vars                /opt/PUGS/builder/catalog/test_vars
 
 %post
     set -eux
@@ -56,14 +54,14 @@ From: python:3.13-bookworm
     # Mount points for runtime-supplied data.
     mkdir -p /data/sims /data/zoom_ics
 
-    # The build_container.sh wrapper guarantees this file is present, but we
-    # check here so a hand-driven `apptainer build` fails loudly rather than
-    # producing a container with a missing database.
-    test -f /opt/PUGS/data/pugs.db
+    # The build_container.sh wrapper guarantees this directory is present, but
+    # we check here so a hand-driven `apptainer build` fails loudly rather than
+    # producing a container with a missing catalog.
+    test -d /opt/PUGS/data/catalog
 
 %environment
-    export TANGOS_DB_CONNECTION=/opt/PUGS/data/pugs.db
-    export TANGOS_SIMULATION_FOLDER=/data/sims
+    export PUGS_CATALOG=/opt/PUGS/data/catalog
+    export PUGS_SIMULATION=/data/sims
     export PUGS_HOME=/opt/PUGS
     export PYTHONUNBUFFERED=1
 
@@ -83,12 +81,11 @@ From: python:3.13-bookworm
     PUGS - Portable Universal Galaxy Sampler
 
     This container bundles the PUGS pipeline together with the pre-computed
-    TANGOS halo catalog from the 2048^3 collisionless volume:
+    Parquet halo catalog from the 2048^3 collisionless volume:
 
       genetIC                      cosmological zoom-in IC generator
-      tangos                       halo database analysis framework
-      pugs (Python package)        halo property calculators and zoom helpers
-      /opt/PUGS/data/pugs.db       pre-computed TANGOS halo catalog
+      pugs (Python package)        catalog builder and zoom helpers
+      /opt/PUGS/data/catalog       pre-computed Parquet halo catalog
 
     Quick start:
 
@@ -96,18 +93,28 @@ From: python:3.13-bookworm
         apptainer run pugs.sif
 
         # Inspect the bundled halo catalog
-        apptainer exec pugs.sif tangos list-simulations
-
-        # Generate a zoom-in IC for a TANGOS halo (writes id_file.txt)
         apptainer exec pugs.sif python -c \
-            "from pugs.genetic import write_particle_ids; write_particle_ids(1)"
+            "from pugs.io import read_catalog; import os; \
+             c = read_catalog(os.environ['PUGS_CATALOG']); \
+             print(len(c), 'halos', c.provenance['simulation'])"
 
-    To analyse simulation snapshots living on the host filesystem, bind-mount
-    them to /data/sims (the path TANGOS_SIMULATION_FOLDER points at):
+        # Or query it with any Parquet reader, no PUGS import needed
+        apptainer exec pugs.sif python -c \
+            "import duckdb, os; print(duckdb.sql( \
+             f\"select count(*) from '{os.environ['PUGS_CATALOG']}/halos_*.parquet'\"))"
 
-        apptainer exec -B /path/to/sims:/data/sims pugs.sif tangos write ...
+        # Generate a zoom-in IC for a halo (writes id_file.txt)
+        apptainer exec -B /path/to/sims:/data/sims pugs.sif python -c \
+            "from pugs.genetic import write_particle_ids; \
+             write_particle_ids('/data/sims/NUGS2048', HALO_ID)"
+
+    To build a catalog from snapshots living on the host filesystem,
+    bind-mount them to /data/sims:
+
+        apptainer exec -B /path/to/sims:/data/sims pugs.sif \
+            python -m pugs.export /data/sims/NUGS2048 -o /data/catalog
 
     Environment variables (already set inside the container):
-        TANGOS_DB_CONNECTION=/opt/PUGS/data/pugs.db
-        TANGOS_SIMULATION_FOLDER=/data/sims
+        PUGS_CATALOG=/opt/PUGS/data/catalog
+        PUGS_SIMULATION=/data/sims
         PUGS_HOME=/opt/PUGS

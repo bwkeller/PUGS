@@ -22,9 +22,9 @@ jobs:
           isort --check-only .
       - name: Run shfmt and shellcheck on the builder scripts
         run: |
-          cd builder/tangos_db
-          shfmt -w build_tangos.sh
-          shellcheck -x build_tangos.sh
+          cd builder/catalog
+          shfmt -w build_catalog.sh
+          shellcheck -x build_catalog.sh
           cd ../volume_ic
           shfmt -w build.sh
           shellcheck -x build.sh

@@ -10,6 +10,8 @@ description = "PUGS: The Portable Universal Galaxy Sampler"
 readme = "README.md"
 dependencies = [
     "pynbody @ git+https://github.com/pynbody/pynbody.git@master",
+    "pyarrow>=14",
+    "numpy",
 ]
 dynamic = ["version"]
 
@@ -20,6 +22,8 @@ dev = [
     "flake8==7.3.0",
     "isort==7.0.0",
     "pytest==9.0.2",
+    "pytest-timeout==2.4.0",
+    "duckdb>=1.0",
     "requests==2.32.5",
     "shellcheck-py",
     "pre-commit",
@@ -31,6 +35,23 @@ docs = [
     "sphinx-design",
     ]
 
+[project.scripts]
+pugs-export = "pugs.export:main"
+
+[tool.pytest.ini_options]
+# A hung test should fail with a traceback naming itself, rather than sitting
+# until the CI job-level timeout kills the run with no indication of where.
+#
+# The value is deliberately generous. Nearly all of the suite's cost is the
+# session-scoped catalog fixture, which lands on whichever test triggers it
+# first: ~2.5 minutes on an idle machine, but ~20 on a shared one under load
+# (this repo's dev box regularly sits at load average 20 from other users).
+# A tighter limit would fail on contention rather than on a real hang.
+timeout = 3600
+# Signal-based timeouts only fire when Python regains control, so a hang inside
+# a long pynbody or pyarrow C call would never trip one. The thread method does
+# not depend on the interpreter making progress.
+timeout_method = "thread"
 
 [tool.black]
 line-length = 100
@@ -52,3 +73,6 @@ known_first_party = ["pugs"]
 
 [tool.setuptools]
 packages = ["pugs",]
+
+[tool.setuptools.package-data]
+pugs = ["columns.toml"]

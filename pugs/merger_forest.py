@@ -1,276 +1,99 @@
 """
-Bulk merger-tree analysis for a whole TANGOS simulation.
+Merger trees built directly from AHF's own tree output.
 
-The per-halo alternative -- calling ``calculate_for_progenitors`` /
-``calculate_for_descendants`` once for every halo -- costs O(N_progenitors)
-individual SQL round trips per halo, and every ``MultiHopStrategy`` execution
-also leaks SQLAlchemy schema and mapper state (a mapper, two dependency
-processors on the ``SimulationObjectBase`` mapper, and a few thousand tracked
-Python objects per call).  On a 461k-halo z=0 snapshot that makes the run both
-extremely slow and progressively slower.
+For each snapshot AHF writes an ``AHF_croco`` file listing, for every halo, the
+halos in the previous snapshot that contributed particles to it, together with
+the number of shared particles and AHF's merit function
+``shared**2 / (n_descendant * n_progenitor)``.  That is everything needed to
+build the tree; no database and no re-derivation from particle lists.
 
-This module instead loads the whole merger forest once, with a handful of
-table-scale queries, and derives every quantity with linear numpy passes.
+Which links to keep
+-------------------
+A link is kept when at least :data:`MIN_SHARED_FRACTION` of the *progenitor's*
+particles ended up in the descendant -- that is, when most of the progenitor
+really did become part of that halo.
+
+Thresholding on the merit instead would be wrong for merger counting, because
+the merit penalises a size mismatch: a small halo that is swallowed whole by a
+much larger one has a merit near zero while having contributed every one of its
+particles.  In the NUGS128 z=0 catalog, halo 0's second progenitor has merit
+0.0087 and yet gave up 227 of its 227 particles.  A merit cut would discard it;
+it is a real merger.
+
+Requiring *strictly* more than half also makes the pruned graph a forest by
+construction -- a progenitor cannot give more than half of itself to two
+different descendants -- which is what lets the merger counts below be
+accumulated in a single sweep.  The comparison has to be strict: with a
+non-strict one, a progenitor split exactly evenly between two descendants would
+be linked to both and the guarantee would fail.
 """
 
-import warnings
+from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
-from tangos import core
 
-#: Dictionary items under which merger-tree links are stored.  PUGS databases
-#: use "ahf_tree_link", written by
-#: ``tangos.tools.ahf_merger_tree_importer.AHFTreeImporter.create_links``, which
-#: stores each link in both directions with the same weight; "ptcls_in_common"
-#: is what TANGOS' other tree importers use.  Whichever exist are accepted, so
-#: that links from unrelated relations (e.g. crosslink's "match") are ignored.
-LINK_RELATIONS = ("ahf_tree_link", "ptcls_in_common")
+from . import ahf
+from .simulation import Simulation, halo_id
 
-#: Minimum shared-particle fraction for a link to count as a tree edge.  This
-#: mirrors ``min_onehop_reverse_weight`` in
-#: ``tangos.relation_finding.MultiHopAllProgenitorsStrategy`` (which
-#: ``MultiHopMajorProgenitorsStrategy`` inherits), i.e. the threshold TANGOS
-#: applies when walking progenitors.  Because the AHF importer stores symmetric
-#: weights, the forward and reverse thresholds coincide.
-MIN_LINK_WEIGHT = 0.1
+#: A link is kept when strictly more than this fraction of the progenitor's
+#: particles end up in the descendant.  Must be at least 0.5, and the
+#: comparison must be strict, for the pruned graph to be a forest.
+MIN_SHARED_FRACTION = 0.5
 
 #: A merger is "major" when the second most massive progenitor is at least this
 #: fraction of the most massive one.
 MAJOR_MERGER_RATIO = 0.25
 
-_FETCH_CHUNK = 1_000_000
+#: Column of the AHF halo table used for merger ratios and assembly history.
+#: Masses only ever enter as ratios, so AHF's h-scaled mass is fine and costs
+#: no particle work.
+MASS_COLUMN = "Mhalo"
 
 
+@dataclass
 class MergerForest:
-    """The merger forest of a single simulation, held in numpy arrays.
+    """The merger forest of a simulation, in flat numpy arrays.
 
-    Halos are referred to by *index*: ``halo_id`` is sorted, so
-    :meth:`index_of` maps a TANGOS database id to its position in every other
-    array here.
+    Halos are addressed by *index* into these arrays.  ``halo_id`` is sorted,
+    so :meth:`index_of` maps a catalog halo id to its row.
     """
 
-    def __init__(self, db_simulation):
-        self._load_halos(db_simulation)
-        self._load_links(db_simulation)
-        self._accumulate_merger_history()
+    halo_id: np.ndarray
+    snapshot_index: np.ndarray
+    finder_id: np.ndarray
+    mass: np.ndarray
+    npart: np.ndarray
+    redshift: np.ndarray
+    #: index of the best progenitor of each halo, -1 if none
+    main_progenitor: np.ndarray
+    #: index of the halo each halo merges into, -1 if none
+    descendant: np.ndarray
+    #: number of progenitors above the threshold
+    n_progenitors: np.ndarray
+    n_mm: np.ndarray
+    z_lmm: np.ndarray
 
-    # ------------------------------------------------------------------
-    # loading
-    # ------------------------------------------------------------------
+    def __len__(self) -> int:
+        return len(self.halo_id)
 
-    def _load_halos(self, db_simulation):
-        timesteps = list(db_simulation.timesteps)  # ordered by time_gyr
-        self.redshift = np.array([ts.redshift for ts in timesteps], dtype=np.float64)
+    def index_of(self, values) -> np.ndarray:
+        """Map catalog halo ids to indices into this forest, -1 if absent."""
+        values = np.asarray(values, dtype=np.int64)
+        position = np.searchsorted(self.halo_id, values)
+        np.clip(position, 0, max(len(self.halo_id) - 1, 0), out=position)
+        if len(self.halo_id) == 0:
+            return np.full(values.shape, -1, dtype=np.int64)
+        return np.where(self.halo_id[position] == values, position, -1)
 
-        ids, masses, numbers, ts_index = [], [], [], []
-        for i, ts in enumerate(timesteps):
-            ts_ids, ts_mass, ts_number = ts.calculate_all(
-                "dbid()", "Mhalo", "halo_number()", object_type="halo", sanitize=False
-            )
-            ts_ids = np.asarray(ts_ids, dtype=np.int64)
-            ids.append(ts_ids)
-            masses.append(_as_float(ts_mass))
-            numbers.append(np.asarray(ts_number, dtype=np.int64))
-            ts_index.append(np.full(ts_ids.size, i, dtype=np.int32))
+    def mass_percentile_redshifts(self, indices, fractions) -> np.ndarray:
+        """Redshifts at which each halo's main branch last held ``fractions``
+        of its final mass.
 
-        halo_id = np.concatenate(ids)
-        order = np.argsort(halo_id, kind="stable")
-
-        self.halo_id = halo_id[order]
-        self.mass = np.concatenate(masses)[order]
-        self.halo_number = np.concatenate(numbers)[order]
-        self.ts_index = np.concatenate(ts_index)[order]
-
-        # halos grouped by timestep, so each level is a contiguous slice
-        self._by_ts = np.argsort(self.ts_index, kind="stable")
-        self._ts_bounds = np.searchsorted(self.ts_index[self._by_ts], np.arange(len(timesteps) + 1))
-
-    def _load_links(self, db_simulation):
-        """Load the merger-tree links and reduce them to major descendant and
-        major progenitor pointers."""
-        session = core.get_default_session()
-        relations = [
-            rid
-            for rid in (
-                core.dictionary.get_dict_id(name, None, session=session) for name in LINK_RELATIONS
-            )
-            if rid is not None
-        ]
-        if not relations:
-            raise RuntimeError(
-                "No merger-tree links found; expected one of %s. "
-                "Has `tangos import-ahf-trees` been run?" % (LINK_RELATIONS,)
-            )
-        timestep_ids = [ts.id for ts in db_simulation.timesteps]
-
-        link = core.halo_data.HaloLink.__table__
-        halo = core.halo.SimulationObjectBase.__table__
-        stmt = (
-            link.select()
-            .with_only_columns(link.c.halo_from_id, link.c.halo_to_id, link.c.weight)
-            .select_from(link.join(halo, halo.c.id == link.c.halo_from_id))
-            .where(link.c.relation_id.in_(relations))
-            .where(halo.c.timestep_id.in_(timestep_ids))
-            .where(link.c.weight > MIN_LINK_WEIGHT)
-        )
-
-        from_idx, to_idx, weight = self._fetch_links(session, stmt)
-
-        t_from = self.ts_index[from_idx]
-        t_to = self.ts_index[to_idx]
-
-        # A link pointing forwards in time is a candidate descendant link, one
-        # pointing backwards a candidate progenitor link.  Links within a
-        # timestep (there should be none in an AHF tree) are ignored.
-        forwards = t_to > t_from
-        backwards = t_to < t_from
-
-        # major descendant: earliest later timestep, then heaviest link, then
-        # lowest halo number -- matching HopMajorDescendantStrategy's ordering
-        self.next_idx = self._best_neighbour(
-            from_idx[forwards], to_idx[forwards], weight[forwards], t_to[forwards]
-        )
-        # major progenitor: latest earlier timestep, same tie-breaks -- matching
-        # MultiHopMajorProgenitorsStrategy
-        self.main_prog_idx = self._best_neighbour(
-            from_idx[backwards],
-            to_idx[backwards],
-            weight[backwards],
-            -t_to[backwards].astype(np.int64),
-        )
-
-        self._check_is_forest(from_idx[forwards])
-
-    @staticmethod
-    def _check_is_forest(link_sources):
-        """Warn if a halo has more than one descendant above the threshold.
-
-        Aggregating over the tree in a single sweep relies on the pruned links
-        forming a forest, which is what makes a halo's progenitor set exactly
-        its subtree here.  AHF trees satisfy this -- in the NUGS2048 database
-        all 29,984,548 halos with a tree link above the threshold have exactly
-        one -- but if a future catalogue does not, the counts would start to
-        drift from a per-halo `MultiHopAllProgenitorsStrategy` walk, so say so
-        rather than failing quietly.
-        """
-        if link_sources.size == 0:
-            return
-        _, counts = np.unique(link_sources, return_counts=True)
-        branching = int((counts > 1).sum())
-        if branching:
-            warnings.warn(
-                "%d halos have more than one descendant linked above a shared-particle "
-                "fraction of %g. The merger tree is not a forest, so merger counts may "
-                "differ from a per-halo progenitor walk." % (branching, MIN_LINK_WEIGHT),
-                RuntimeWarning,
-            )
-
-    def _fetch_links(self, session, stmt):
-        """Stream the link query into index arrays, dropping links that point
-        outside the halos we loaded."""
-        conn = session.connection().execution_options(stream_results=True)
-        result = conn.execute(stmt)
-
-        from_chunks, to_chunks, weight_chunks = [], [], []
-        while True:
-            rows = result.fetchmany(_FETCH_CHUNK)
-            if not rows:
-                break
-            n = len(rows)
-            from_chunks.append(np.fromiter((r[0] for r in rows), dtype=np.int64, count=n))
-            to_chunks.append(np.fromiter((r[1] for r in rows), dtype=np.int64, count=n))
-            weight_chunks.append(np.fromiter((r[2] for r in rows), dtype=np.float64, count=n))
-
-        if not from_chunks:
-            empty_i = np.empty(0, dtype=np.int64)
-            return empty_i, empty_i, np.empty(0, dtype=np.float64)
-
-        from_id = np.concatenate(from_chunks)
-        to_id = np.concatenate(to_chunks)
-        weight = np.concatenate(weight_chunks)
-
-        from_idx = self.index_of(from_id)
-        to_idx = self.index_of(to_id)
-        keep = (from_idx >= 0) & (to_idx >= 0)
-        return from_idx[keep], to_idx[keep], weight[keep]
-
-    def _best_neighbour(self, source, target, weight, time_key):
-        """For each ``source``, pick the ``target`` minimising ``time_key``,
-        then maximising ``weight``, then minimising halo number.
-
-        Returns a full-length array of target indices, -1 where a source has no
-        candidate.
-        """
-        best = np.full(self.halo_id.size, -1, dtype=np.int64)
-        if source.size == 0:
-            return best
-
-        # np.lexsort applies the last key first, so this sorts by source, then
-        # time_key ascending, then weight descending, then halo number ascending
-        order = np.lexsort((self.halo_number[target], -weight, time_key, source))
-        source_sorted = source[order]
-        starts = np.flatnonzero(np.r_[True, source_sorted[1:] != source_sorted[:-1]])
-        best[source_sorted[starts]] = target[order][starts]
-        return best
-
-    # ------------------------------------------------------------------
-    # derived quantities
-    # ------------------------------------------------------------------
-
-    def _accumulate_merger_history(self):
-        """Count major mergers over each halo's progenitor tree.
-
-        Every halo has at most one major descendant, so the links form a
-        forest and the counts can be accumulated in a single sweep from the
-        earliest timestep to the latest.  A halo's progenitors are grouped by
-        their own timestep, matching the per-redshift grouping of the original
-        per-halo implementation.
-        """
-        n_halos = self.halo_id.size
-        self.n_mm = np.zeros(n_halos, dtype=np.int64)
-        self.z_lmm = np.full(n_halos, -1.0, dtype=np.float64)
-
-        for level in range(self.redshift.size):
-            members = self._by_ts[self._ts_bounds[level] : self._ts_bounds[level + 1]]
-            progenitors = members[self.next_idx[members] >= 0]
-            if progenitors.size == 0:
-                continue
-
-            descendants = self.next_idx[progenitors]
-            # group by descendant, heaviest progenitor first within each group
-            order = np.lexsort((-self.mass[progenitors], descendants))
-            progenitors = progenitors[order]
-            descendants = descendants[order]
-
-            starts = np.flatnonzero(np.r_[True, descendants[1:] != descendants[:-1]])
-            counts = np.diff(np.r_[starts, descendants.size])
-            group = descendants[starts]
-
-            # a major merger needs at least two progenitors, with the second
-            # most massive at least MAJOR_MERGER_RATIO of the most massive
-            event = np.zeros(starts.size, dtype=bool)
-            multiple = counts >= 2
-            mass = self.mass[progenitors]
-            event[multiple] = (
-                mass[starts[multiple] + 1] >= MAJOR_MERGER_RATIO * mass[starts[multiple]]
-            )
-
-            self.n_mm[group] += np.add.reduceat(self.n_mm[progenitors], starts) + event
-
-            # z_lmm is the lowest redshift of any major merger in the subtree
-            inherited = np.minimum.reduceat(_no_merger_to_inf(self.z_lmm[progenitors]), starts)
-            here = np.where(event, self.redshift[level], np.inf)
-            merged = np.minimum(np.minimum(inherited, here), _no_merger_to_inf(self.z_lmm[group]))
-            self.z_lmm[group] = np.where(np.isfinite(merged), merged, -1.0)
-
-    def mass_percentile_redshifts(self, indices, fractions):
-        """Redshifts at which each halo's main branch last exceeded each of
-        ``fractions`` times its final mass.
-
-        This reproduces ``z[m > f * M][-1]`` over the results of
-        ``calculate_for_progenitors``, whose rows run from low to high
-        redshift: the answer is the *highest* redshift at which the main branch
-        was above the threshold.
+        Walking backwards in time, redshift only increases, so the answer is
+        the highest redshift at which the main branch was still above the
+        threshold.  Returned as ``(len(fractions), len(indices))``.
         """
         indices = np.asarray(indices, dtype=np.int64)
         current = indices.copy()
@@ -283,49 +106,191 @@ class MergerForest:
                 break
             live_at = np.flatnonzero(live)
             here = current[live]
-            redshift = self.redshift[self.ts_index[here]]
+            redshift = self.redshift[self.snapshot_index[here]]
             mass = self.mass[here]
-            # walking backwards in time means redshift only increases, so each
-            # assignment overwrites with a higher redshift
             for row, fraction in enumerate(fractions):
                 above = mass > fraction * final_mass[live]
                 out[row, live_at[above]] = redshift[above]
-            current[live] = self.main_prog_idx[here]
+            current[live] = self.main_progenitor[here]
 
         return out
 
-    # ------------------------------------------------------------------
 
-    def index_of(self, halo_id):
-        """Map TANGOS database ids to indices into this forest, -1 if absent."""
-        halo_id = np.asarray(halo_id, dtype=np.int64)
-        idx = np.searchsorted(self.halo_id, halo_id)
-        np.clip(idx, 0, self.halo_id.size - 1, out=idx)
-        return np.where(self.halo_id[idx] == halo_id, idx, -1)
+def build_forest(
+    simulation: Simulation,
+    halo_tables: dict[str, "object"] | None = None,
+    min_shared_fraction: float = MIN_SHARED_FRACTION,
+    min_particles: int = 0,
+) -> MergerForest:
+    """Build the merger forest of ``simulation`` from its AHF tree files.
+
+    By default the forest includes *every* halo AHF found, not only those above
+    the catalog's particle cut.  Merger counts and assembly histories are
+    properties of the tree, and dropping small progenitors before building it
+    biases them: a halo whose two progenitors both fall below the cut looks
+    like it had no merger at all.  ``min_particles`` is provided to reproduce
+    that narrower tree for comparison, not because it is the better choice.
+    """
+    halo_id_parts, snapshot_parts, finder_parts = [], [], []
+    mass_parts, npart_parts = [], []
+    finder_by_snapshot: list[np.ndarray] = []
+
+    for snapshot in simulation:
+        table = (halo_tables or {}).get(snapshot.extension)
+        if table is None:
+            table = ahf.read_halo_table(snapshot.ahf("halos"))
+        finder = np.asarray(table.column("ID").to_numpy(), dtype=np.int64)
+        counts = np.asarray(table.column("npart").to_numpy(), dtype=np.int64)
+        order = np.argsort(finder, kind="stable")
+        if min_particles:
+            order = order[counts[order] >= min_particles]
+        finder = finder[order]
+
+        finder_by_snapshot.append(finder)
+        finder_parts.append(finder)
+        halo_id_parts.append(halo_id(snapshot.index, finder))
+        snapshot_parts.append(np.full(finder.size, snapshot.index, dtype=np.int64))
+        mass_parts.append(np.asarray(table.column(MASS_COLUMN).to_numpy(), dtype=np.float64)[order])
+        npart_parts.append(np.asarray(table.column("npart").to_numpy(), dtype=np.int64)[order])
+
+    forest = MergerForest(
+        halo_id=_concat(halo_id_parts, np.int64),
+        snapshot_index=_concat(snapshot_parts, np.int64),
+        finder_id=_concat(finder_parts, np.int64),
+        mass=_concat(mass_parts, np.float64),
+        npart=_concat(npart_parts, np.int64),
+        redshift=np.array([snapshot.redshift for snapshot in simulation], dtype=np.float64),
+        main_progenitor=np.empty(0, dtype=np.int64),
+        descendant=np.empty(0, dtype=np.int64),
+        n_progenitors=np.empty(0, dtype=np.int64),
+        n_mm=np.empty(0, dtype=np.int64),
+        z_lmm=np.empty(0, dtype=np.float64),
+    )
+
+    offsets = np.concatenate([[0], np.cumsum([f.size for f in finder_by_snapshot])]).astype(
+        np.int64
+    )
+    _link_forest(forest, simulation, finder_by_snapshot, offsets, min_shared_fraction)
+    _accumulate_merger_history(forest)
+    return forest
 
 
-def _as_float(values):
-    """Convert a possibly object-dtype array containing None into float64."""
-    values = np.asarray(values, dtype=object)
-    return np.array([np.nan if v is None else float(v) for v in values], dtype=np.float64)
+def _concat(parts, dtype) -> np.ndarray:
+    return np.concatenate(parts).astype(dtype) if parts else np.empty(0, dtype=dtype)
 
 
-def _no_merger_to_inf(z):
+def _link_forest(forest, simulation, finder_by_snapshot, offsets, min_shared_fraction) -> None:
+    """Fill in ``main_progenitor``, ``descendant`` and ``n_progenitors``."""
+    n_halos = len(forest.halo_id)
+    forest.main_progenitor = np.full(n_halos, -1, dtype=np.int64)
+    forest.descendant = np.full(n_halos, -1, dtype=np.int64)
+    forest.n_progenitors = np.zeros(n_halos, dtype=np.int64)
+
+    # a progenitor keeps the descendant it gave the largest fraction of itself to
+    best_fraction = np.zeros(n_halos, dtype=np.float64)
+    best_merit = np.zeros(n_halos, dtype=np.float64)
+
+    for snapshot in simulation:
+        if snapshot.index == 0 or not snapshot.has_ahf("croco"):
+            continue
+        links = ahf.read_merger_links(snapshot.ahf("croco"))
+        if len(links) == 0:
+            continue
+
+        fraction = np.where(
+            links.n_progenitor > 0, links.shared / np.maximum(links.n_progenitor, 1), 0.0
+        )
+        keep = fraction > min_shared_fraction
+        if not keep.any():
+            continue
+
+        descendant_idx = _locate(
+            links.descendant[keep], finder_by_snapshot[snapshot.index], offsets[snapshot.index]
+        )
+        progenitor_idx = _locate(
+            links.progenitor[keep],
+            finder_by_snapshot[snapshot.index - 1],
+            offsets[snapshot.index - 1],
+        )
+        merit = links.merit[keep]
+        fraction = fraction[keep]
+
+        valid = (descendant_idx >= 0) & (progenitor_idx >= 0)
+        descendant_idx, progenitor_idx = descendant_idx[valid], progenitor_idx[valid]
+        merit, fraction = merit[valid], fraction[valid]
+        if descendant_idx.size == 0:
+            continue
+
+        np.add.at(forest.n_progenitors, descendant_idx, 1)
+
+        # main progenitor of each descendant: highest merit, AHF's own ranking
+        _assign_best(forest.main_progenitor, best_merit, descendant_idx, progenitor_idx, merit)
+        # descendant of each progenitor: wherever most of it ended up
+        _assign_best(forest.descendant, best_fraction, progenitor_idx, descendant_idx, fraction)
+
+
+def _assign_best(target, best_score, keys, values, scores) -> None:
+    """For each key, keep the value with the highest score."""
+    order = np.lexsort((-scores, keys))
+    keys, values, scores = keys[order], values[order], scores[order]
+    starts = np.flatnonzero(np.r_[True, keys[1:] != keys[:-1]])
+    winners, winning_score, winning_value = keys[starts], scores[starts], values[starts]
+    better = winning_score > best_score[winners]
+    target[winners[better]] = winning_value[better]
+    best_score[winners[better]] = winning_score[better]
+
+
+def _locate(finder_ids, sorted_finder, offset) -> np.ndarray:
+    """Global forest indices for AHF ids within one snapshot, -1 if unknown."""
+    if sorted_finder.size == 0:
+        return np.full(len(finder_ids), -1, dtype=np.int64)
+    position = np.searchsorted(sorted_finder, finder_ids)
+    np.clip(position, 0, sorted_finder.size - 1, out=position)
+    return np.where(sorted_finder[position] == finder_ids, position + offset, -1)
+
+
+def _accumulate_merger_history(forest: MergerForest) -> None:
+    """Count major mergers over each halo's progenitor tree.
+
+    The threshold on shared particles makes the links a forest, so a halo's
+    progenitor set is exactly its subtree and the counts accumulate in one
+    sweep from the earliest snapshot to the latest.
+    """
+    n_halos = len(forest.halo_id)
+    forest.n_mm = np.zeros(n_halos, dtype=np.int64)
+    forest.z_lmm = np.full(n_halos, -1.0, dtype=np.float64)
+
+    order = np.argsort(forest.snapshot_index, kind="stable")
+    bounds = np.searchsorted(forest.snapshot_index[order], np.arange(forest.redshift.size + 1))
+
+    for level in range(forest.redshift.size):
+        members = order[bounds[level] : bounds[level + 1]]
+        progenitors = members[forest.descendant[members] >= 0]
+        if progenitors.size == 0:
+            continue
+
+        descendants = forest.descendant[progenitors]
+        # group by descendant, heaviest progenitor first within each group
+        grouped = np.lexsort((-forest.mass[progenitors], descendants))
+        progenitors, descendants = progenitors[grouped], descendants[grouped]
+
+        starts = np.flatnonzero(np.r_[True, descendants[1:] != descendants[:-1]])
+        counts = np.diff(np.r_[starts, descendants.size])
+        group = descendants[starts]
+
+        mass = forest.mass[progenitors]
+        event = np.zeros(starts.size, dtype=bool)
+        multiple = counts >= 2
+        event[multiple] = mass[starts[multiple] + 1] >= MAJOR_MERGER_RATIO * mass[starts[multiple]]
+
+        forest.n_mm[group] += np.add.reduceat(forest.n_mm[progenitors], starts) + event
+
+        inherited = np.minimum.reduceat(_no_merger_to_inf(forest.z_lmm[progenitors]), starts)
+        here = np.where(event, forest.redshift[level], np.inf)
+        merged = np.minimum(np.minimum(inherited, here), _no_merger_to_inf(forest.z_lmm[group]))
+        forest.z_lmm[group] = np.where(np.isfinite(merged), merged, -1.0)
+
+
+def _no_merger_to_inf(z: np.ndarray) -> np.ndarray:
     """Map the "no merger" sentinel of -1 onto +inf so it loses any minimum."""
     return np.where(z < 0, np.inf, z)
-
-
-_cache = {}
-
-
-def get_merger_forest(db_simulation):
-    """Return the (cached) :class:`MergerForest` for a simulation.
-
-    Only one forest is kept at a time; it is several GB for a 2048^3 run.
-    """
-    forest = _cache.get(db_simulation.id)
-    if forest is None:
-        forest = MergerForest(db_simulation)
-        _cache.clear()
-        _cache[db_simulation.id] = forest
-    return forest

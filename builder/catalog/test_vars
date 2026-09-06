@@ -1,0 +1,6 @@
+# Settings for the NUGS128 test simulation.  Each may be overridden by
+# exporting it before sourcing this file.
+export PUGS_SIMULATION=${PUGS_SIMULATION:-$HOME/data/NUGS128}
+export PUGS_NAME=${PUGS_NAME:-NUGS128}
+export PUGS_CATALOG=${PUGS_CATALOG:-NUGS128_catalog}
+export PUGS_MIN_PARTICLES=${PUGS_MIN_PARTICLES:-500}
