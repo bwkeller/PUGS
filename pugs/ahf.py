@@ -15,6 +15,11 @@ AHF writes one set of plain-text files per snapshot, all sharing the stem
     snapshot*, not ``iord`` values -- the tipsy files carry no ``iord`` array.
 ``AHF_substructure``
     A ``<halo_id> <n_sub>`` line followed by a line listing the subhalo ids.
+``AHF_fpos``
+    A byte offset into ``AHF_particles`` for each halo, in the same order as
+    ``AHF_halos``.  It turns membership lookup from a whole-file parse into a
+    seek, which is the difference between minutes and microseconds on the
+    production catalogs.
 ``AHF_croco``
     The merger tree with real shared-particle counts and AHF's merit function.
 ``AHF_mtree``
@@ -32,6 +37,7 @@ are written side by side there is no reason to use the weaker one.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +45,8 @@ from pathlib import Path
 import numpy as np
 import pyarrow as pa
 import pyarrow.csv as pv
+
+logger = logging.getLogger(__name__)
 
 #: Column header of an AHF_halos file: "#ID(1)\thostHalo(2)\t..."
 _HEADER_COLUMN = re.compile(r"^(.*?)\((\d+)\)$")
@@ -122,6 +130,15 @@ class ParticleMembership:
     def __len__(self) -> int:
         return len(self.halo_id)
 
+    def __enter__(self) -> "ParticleMembership":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+    def close(self) -> None:
+        """No-op; the whole file is already in memory."""
+
     def particles(self, halo_id: int) -> np.ndarray:
         """Snapshot indices belonging to one halo."""
         row = np.searchsorted(self.halo_id, halo_id)
@@ -131,7 +148,12 @@ class ParticleMembership:
 
 
 def read_particle_membership(path: Path | str) -> ParticleMembership:
-    """Read an ``AHF_particles`` file.
+    """Read a whole ``AHF_particles`` file into memory.
+
+    This is the fallback for snapshots with no ``AHF_fpos`` index; prefer
+    :func:`open_membership`, which seeks to individual halos instead.  The
+    production files run to tens of gigabytes apiece, and ``np.loadtxt`` reads
+    them at roughly 80 MB/s.
 
     The file interleaves per-halo headers with particle rows, and both are two
     integers wide, so the blocks can only be separated by walking the counts.
@@ -173,6 +195,155 @@ def read_particle_membership(path: Path | str) -> ParticleMembership:
         offsets = np.concatenate([[0], np.cumsum([len(g) for g in regrouped])]).astype(np.int64)
         indices = np.concatenate(regrouped) if regrouped else indices
     return ParticleMembership(halo_id, offsets, indices)
+
+
+def read_fpos(path: Path | str) -> np.ndarray:
+    """Read an ``AHF_fpos`` file: one byte offset per halo, in ``AHF_halos`` order.
+
+    Each offset points at the *first particle row* of that halo's block in
+    ``AHF_particles``, i.e. just past the ``<npart> <halo_id>`` header line.
+    """
+    offsets = np.loadtxt(path, dtype=np.int64, ndmin=1)
+    if offsets.size and np.any(np.diff(offsets) <= 0):
+        raise ValueError(f"{path}: offsets are not strictly increasing")
+    return offsets
+
+
+class IndexedMembership:
+    """Random access into ``AHF_particles``, using the ``AHF_fpos`` index.
+
+    Reads one halo's block on demand rather than parsing the whole file.  On
+    the NUGS2048 z=0 catalog that file is 60 GB across ~4.6 billion rows, so
+    the difference is a seek against a full parse.
+
+    It also sidesteps a parsing problem: the block header rows and the particle
+    rows do not always use the same separator -- in the NUGS128 catalogs the
+    headers are space-padded while the particle rows are tab-separated, which
+    no single-delimiter CSV parser can read.  Seeking past the headers leaves
+    each block internally uniform.
+    """
+
+    def __init__(self, path, halo_id, offset, end, count, delimiter):
+        order = np.argsort(halo_id, kind="stable")
+        self.path = Path(path)
+        self.halo_id = np.asarray(halo_id, dtype=np.int64)[order]
+        self.offset = np.asarray(offset, dtype=np.int64)[order]
+        self.end = np.asarray(end, dtype=np.int64)[order]
+        self.count = np.asarray(count, dtype=np.int64)[order]
+        self.delimiter = delimiter
+        self._handle = None
+
+    def __len__(self) -> int:
+        return len(self.halo_id)
+
+    def __enter__(self) -> "IndexedMembership":
+        self._handle = open(self.path, "rb")
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+
+    def particles(self, halo_id: int) -> np.ndarray:
+        """Snapshot indices belonging to one halo."""
+        row = np.searchsorted(self.halo_id, halo_id)
+        if row >= len(self.halo_id) or self.halo_id[row] != halo_id:
+            raise KeyError(f"halo {halo_id} is not in {self.path}")
+        count = int(self.count[row])
+        if count == 0:
+            return np.empty(0, dtype=np.int64)
+
+        handle = self._handle or open(self.path, "rb")
+        try:
+            handle.seek(int(self.offset[row]))
+            raw = handle.read(int(self.end[row]) - int(self.offset[row]))
+        finally:
+            if self._handle is None:
+                handle.close()
+
+        return _parse_block(raw, count, self.delimiter, self.path, halo_id)
+
+
+def _parse_block(raw: bytes, count: int, delimiter: str, path: Path, halo_id: int) -> np.ndarray:
+    """Parse the first ``count`` rows of a block, returning column 0.
+
+    The byte range runs to the *next* halo's offset, so it also contains that
+    halo's header line; the rows are trimmed to ``count`` before parsing.
+    """
+    newlines = np.flatnonzero(np.frombuffer(raw, dtype=np.uint8) == 0x0A)
+    if newlines.size < count:
+        raise ValueError(
+            f"{path}: halo {halo_id} declares {count} particles but its block "
+            f"holds {newlines.size} rows"
+        )
+    table = pv.read_csv(
+        pa.BufferReader(raw[: newlines[count - 1] + 1]),
+        read_options=pv.ReadOptions(autogenerate_column_names=True),
+        parse_options=pv.ParseOptions(delimiter=delimiter),
+        convert_options=pv.ConvertOptions(include_columns=["f0"]),
+    )
+    return np.asarray(table.column(0).to_numpy(), dtype=np.int64)
+
+
+def open_membership(snapshot, halo_table):
+    """Fastest available membership access for a snapshot.
+
+    Uses the ``AHF_fpos`` byte index when it is present, which reads only the
+    halos actually asked for.  Without it there is no choice but to parse the
+    entire particles file.
+    """
+    if snapshot.has_ahf("fpos"):
+        return open_indexed_membership(
+            snapshot.ahf("particles"),
+            snapshot.ahf("fpos"),
+            halo_table.column("ID").to_numpy(),
+            halo_table.column("npart").to_numpy(),
+        )
+    logger.warning(
+        "%s has no AHF_fpos; falling back to parsing the whole particles file (%.1f GB)",
+        snapshot.extension,
+        snapshot.ahf("particles").stat().st_size / 1e9,
+    )
+    return read_particle_membership(snapshot.ahf("particles"))
+
+
+def open_indexed_membership(
+    particles: Path | str, fpos: Path | str, halo_id, npart
+) -> IndexedMembership:
+    """Build an :class:`IndexedMembership` from the AHF files of one snapshot.
+
+    ``halo_id`` and ``npart`` come from ``AHF_halos`` and must be in file
+    order, since ``AHF_fpos`` is written in that same order.
+    """
+    particles = Path(particles)
+    offsets = read_fpos(fpos)
+    halo_id = np.asarray(halo_id, dtype=np.int64)
+    npart = np.asarray(npart, dtype=np.int64)
+    if len(offsets) != len(halo_id):
+        raise ValueError(
+            f"{fpos}: {len(offsets)} offsets for {len(halo_id)} halos in the halo table"
+        )
+
+    end = np.empty_like(offsets)
+    end[:-1] = offsets[1:]
+    end[-1] = particles.stat().st_size
+    return IndexedMembership(
+        particles, halo_id, offsets, end, npart, _block_delimiter(particles, offsets)
+    )
+
+
+def _block_delimiter(particles: Path, offsets: np.ndarray) -> str:
+    """Separator used *inside* a block, read from its first particle row."""
+    if offsets.size == 0:
+        return " "
+    with open(particles, "rb") as handle:
+        handle.seek(int(offsets[0]))
+        row = handle.readline()
+    return "\t" if b"\t" in row else " "
 
 
 def read_substructure(path: Path | str) -> dict[int, np.ndarray]:

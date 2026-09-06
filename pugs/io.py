@@ -43,6 +43,7 @@ from importlib import metadata as importlib_metadata
 from importlib import resources
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -61,6 +62,9 @@ PROVENANCE_FILENAME = "provenance.json"
 #: care about (pyarrow, duckdb, polars, Spark) supports it.
 COMPRESSION = "zstd"
 COMPRESSION_LEVEL = 9
+
+#: Dependencies whose source revision is recorded alongside their version.
+_REVISION_PACKAGES = ("pynbody", "pyarrow", "numpy")
 
 _DICTIONARY: dict[str, Any] | None = None
 
@@ -207,12 +211,19 @@ def write_snapshot(
 
 
 def build_provenance(**extra: Any) -> dict[str, Any]:
-    """Record of what produced a catalog: code versions, git SHA, timestamp."""
+    """Record of what produced a catalog: code versions, revisions, timestamp.
+
+    ``versions`` alone cannot identify a build -- a fork carrying a patch
+    reports the same version as the release it branched from -- so
+    ``revisions`` records the source commit of each dependency where one can be
+    determined.
+    """
     provenance: dict[str, Any] = {
         "pugs_schema_version": schema_version(),
         "written_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_sha": _git_sha(),
         "versions": _versions(),
+        "revisions": _revisions(),
     }
     provenance.update(extra)
     return provenance
@@ -227,12 +238,46 @@ def write_provenance(directory: Path | str, provenance: Mapping[str, Any]) -> Pa
     return path
 
 
-def _git_sha() -> str | None:
-    """Current PUGS commit, or None outside a git checkout (e.g. an installed wheel)."""
-    package_root = Path(__file__).resolve().parent
+def _git_sha(path: Path | None = None) -> str | None:
+    """HEAD of the git checkout containing ``path``, or None if there isn't one.
+
+    Defaults to the PUGS package itself.  Returns None for an installed wheel,
+    which is not in a checkout.
+    """
+    target = Path(path) if path is not None else Path(__file__).resolve().parent
+    return _git(target, "rev-parse", "HEAD")
+
+
+def _git_is_dirty(path: Path) -> bool | None:
+    """Whether the checkout containing ``path`` has uncommitted *tracked* changes.
+
+    Untracked files are ignored: a checkout used for development accumulates
+    scratch output that has no bearing on the installed code, and counting it
+    would leave the flag permanently true and therefore useless.
+    """
+    status = _git(Path(path), "status", "--porcelain", "--untracked-files=no")
+    return None if status is None else bool(status)
+
+
+#: Directories that hold installed copies rather than checkouts.
+_INSTALL_DIRS = ("site-packages", "dist-packages")
+
+
+def _is_installed_copy(path: Path) -> bool:
+    """Whether ``path`` is an installed copy rather than a working tree.
+
+    This matters because a virtualenv often sits *inside* a source checkout.
+    Walking up from ``.venv/lib/python3.12/site-packages/numpy`` finds the
+    enclosing project's git repository and would otherwise attribute that
+    project's commit to numpy.
+    """
+    return any(part in _INSTALL_DIRS for part in Path(path).parts)
+
+
+def _git(path: Path, *args: str) -> str | None:
     try:
         result = subprocess.run(
-            ["git", "-C", str(package_root), "rev-parse", "HEAD"],
+            ["git", "-C", str(path), *args],
             capture_output=True,
             text=True,
             timeout=10,
@@ -240,7 +285,84 @@ def _git_sha() -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout.strip() or None if result.returncode == 0 else None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def _revisions() -> dict[str, dict[str, Any]]:
+    """Source revision of each dependency, where one can be determined.
+
+    A version number is not enough to identify a build: a fork carrying a patch
+    reports the same version as the release it was branched from.  This records
+    the commit as well, so a catalog can be traced to the exact code that
+    produced it.
+    """
+    found = {}
+    for name in _REVISION_PACKAGES:
+        revision = _package_revision(name)
+        if revision:
+            found[name] = revision
+    return found
+
+
+def _package_revision(name: str) -> dict[str, Any] | None:
+    """Commit and source URL of an installed distribution, if discoverable.
+
+    Three install shapes, in order of reliability:
+
+    1. Installed from a VCS URL -- pip records the exact commit in
+       ``direct_url.json`` (PEP 610).  Authoritative.
+    2. Installed from a local directory -- the URL is recorded but no commit,
+       so the checkout is queried.  Best effort: it reports where that checkout
+       stands *now*, which may have moved since the install, hence
+       ``resolved_from``.
+    3. Installed in place (editable) -- the package directory is itself inside
+       a checkout.  Installed *copies* are excluded from this last case: a
+       virtualenv commonly sits inside a source checkout, so walking up from
+       ``site-packages`` would attribute the enclosing project's commit to
+       every dependency.
+    """
+    try:
+        distribution = importlib_metadata.distribution(name)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+    revision: dict[str, Any] = {}
+    raw = None
+    try:
+        raw = distribution.read_text("direct_url.json")
+    except Exception:  # nosec - metadata may be absent or unreadable
+        raw = None
+
+    if raw:
+        try:
+            direct = json.loads(raw)
+        except json.JSONDecodeError:
+            direct = {}
+        if direct.get("url"):
+            revision["url"] = direct["url"]
+        commit = (direct.get("vcs_info") or {}).get("commit_id")
+        if commit:
+            revision["commit"] = commit
+            revision["resolved_from"] = "install record"
+        elif str(direct.get("url", "")).startswith("file://"):
+            source = Path(unquote(urlparse(direct["url"]).path))
+            sha = _git_sha(source)
+            if sha:
+                revision.update(
+                    commit=sha, resolved_from="working tree", dirty=_git_is_dirty(source)
+                )
+
+    if "commit" not in revision:
+        installed = Path(distribution.locate_file(name))
+        if not _is_installed_copy(installed):
+            sha = _git_sha(installed)
+            if sha:
+                revision.update(
+                    commit=sha, resolved_from="working tree", dirty=_git_is_dirty(installed)
+                )
+    return revision or None
 
 
 def _versions() -> dict[str, str | None]:

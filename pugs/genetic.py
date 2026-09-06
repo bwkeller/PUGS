@@ -61,8 +61,9 @@ def particle_ids(
 
     simulation = find_simulation(folder)
     snapshot, finder_id = resolve_halo(simulation, halo_id)
-    membership = ahf.read_particle_membership(snapshot.ahf("particles"))
-    members = membership.particles(finder_id)
+    halo_table = ahf.read_halo_table(snapshot.ahf("halos"))
+    with ahf.open_membership(snapshot, halo_table) as membership:
+        members = membership.particles(finder_id)
 
     if radius_factor is None:
         return members

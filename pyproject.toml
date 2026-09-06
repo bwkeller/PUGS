@@ -9,7 +9,11 @@ authors = [
 description = "PUGS: The Portable Universal Galaxy Sampler"
 readme = "README.md"
 dependencies = [
-    "pynbody @ git+https://github.com/pynbody/pynbody.git@master",
+    # Fork: carries the deterministic unit-ordering fix in CompositeUnit._gather.
+    # Upstream orders irreducible bases by hash, which is the object address, so
+    # unit conversions differ by 1 ULP between processes and M200/M500 are not
+    # bit-reproducible. Track upstream again once the fix lands there.
+    "pynbody @ git+https://github.com/bwkeller/pynbody.git@pugs",
     "pyarrow>=14",
     "numpy",
 ]

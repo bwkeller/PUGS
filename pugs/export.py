@@ -234,7 +234,7 @@ def _snapshot_table(
 
     failed = 0
     if measure and n:
-        measured, failed = _measure_snapshot(snapshot, finder, schema)
+        measured, failed = _measure_snapshot(snapshot, halo_table, finder, schema)
         columns.update(measured)
 
     for field in schema:
@@ -284,9 +284,14 @@ def _derived_columns(columns: dict[str, pa.Array], n: int) -> dict[str, pa.Array
     return derived
 
 
-def _measure_snapshot(snapshot, finder, schema) -> tuple[dict[str, pa.Array], int]:
-    """Measure the particle-derived properties for every selected halo."""
-    membership = ahf.read_particle_membership(snapshot.ahf("particles"))
+def _measure_snapshot(snapshot, halo_table, finder, schema) -> tuple[dict[str, pa.Array], int]:
+    """Measure the particle-derived properties for every selected halo.
+
+    Membership comes through :func:`pugs.ahf.open_membership`, which seeks to
+    each halo's block via the ``AHF_fpos`` index rather than parsing the whole
+    particles file.  Only halos above the cut are ever read, and nothing larger
+    than one halo is held at a time.
+    """
     sim = snapshot.load()
     rho_crit = halo_properties.critical_density(sim)
 
@@ -295,17 +300,18 @@ def _measure_snapshot(snapshot, finder, schema) -> tuple[dict[str, pa.Array], in
     missing = np.ones(n, dtype=bool)
     failed = 0
 
-    for row, halo in enumerate(finder):
-        try:
-            indices = membership.particles(int(halo))
-            measurement = halo_properties.measure_halo(sim, indices, rho_crit).as_dict()
-        except Exception as exc:
-            failed += 1
-            logger.warning("%s halo %d: %s", snapshot.extension, halo, exc)
-            continue
-        for name in MEASURED_COLUMNS:
-            values[name][row] = measurement[name]
-        missing[row] = False
+    with ahf.open_membership(snapshot, halo_table) as membership:
+        for row, halo in enumerate(finder):
+            try:
+                indices = membership.particles(int(halo))
+                measurement = halo_properties.measure_halo(sim, indices, rho_crit).as_dict()
+            except Exception as exc:
+                failed += 1
+                logger.warning("%s halo %d: %s", snapshot.extension, halo, exc)
+                continue
+            for name in MEASURED_COLUMNS:
+                values[name][row] = measurement[name]
+            missing[row] = False
 
     return {
         name: pa.array(values[name], type=schema.field(name).type, mask=missing)
