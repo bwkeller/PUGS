@@ -9,7 +9,6 @@ authors = [
 description = "PUGS: The Portable Universal Galaxy Sampler"
 readme = "README.md"
 dependencies = [
-    "tangos@git+https://github.com/pynbody/tangos.git@master",
     "pynbody @ git+https://github.com/pynbody/pynbody.git@master",
 ]
 dynamic = ["version"]
@@ -32,8 +31,6 @@ docs = [
     "sphinx-design",
     ]
 
-[project.entry-points."tangos.property_modules"]
-properties = "pugs.properties"
 
 [tool.black]
 line-length = 100

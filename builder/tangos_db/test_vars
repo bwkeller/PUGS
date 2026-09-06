@@ -1,3 +1,0 @@
-export TANGOS_DB_CONNECTION=test.db
-export TANGOS_SIMULATION_FOLDER=$HOME/data
-export SIM=NUGS128
