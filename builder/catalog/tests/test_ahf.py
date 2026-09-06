@@ -166,3 +166,103 @@ def test_no_host_sentinel_is_not_assumed(final_snapshot):
     host = np.asarray(table.column("hostHalo").to_numpy())
     assert (host < ids.min()).sum() > 0, "expected some halos with no host"
     assert set(host[host >= ids.min()]) <= set(ids.tolist())
+
+
+# ------------------------------------------------- fpos-indexed membership ---
+
+
+def test_fpos_has_one_offset_per_halo(final_snapshot):
+    offsets = ahf.read_fpos(final_snapshot.ahf("fpos"))
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    assert len(offsets) == table.num_rows
+    assert np.all(np.diff(offsets) > 0), "offsets must be strictly increasing"
+
+
+def test_fpos_rejects_a_non_monotonic_index(tmp_path):
+    path = tmp_path / "sim.z0.000.AHF_fpos"
+    path.write_text("100\n50\n200\n")
+    with pytest.raises(ValueError, match="increasing"):
+        ahf.read_fpos(path)
+
+
+def test_indexed_membership_matches_the_full_parse(final_snapshot):
+    """
+    The index is only useful if it lands on exactly the same particles. Checked
+    for every halo, not a sample: an off-by-one in the offsets would give a
+    plausible-looking but wrong particle set.
+    """
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    reference = ahf.read_particle_membership(final_snapshot.ahf("particles"))
+
+    with ahf.open_membership(final_snapshot, table) as indexed:
+        assert isinstance(indexed, ahf.IndexedMembership)
+        for halo in indexed.halo_id:
+            got = indexed.particles(int(halo))
+            expected = reference.particles(int(halo))
+            assert np.array_equal(np.sort(got), np.sort(expected)), halo
+
+
+def test_indexed_membership_respects_declared_counts(final_snapshot):
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    declared = dict(zip(table.column("ID").to_pylist(), table.column("npart").to_pylist()))
+    with ahf.open_membership(final_snapshot, table) as indexed:
+        for halo in list(declared)[:100]:
+            assert len(indexed.particles(halo)) == declared[halo]
+
+
+def test_block_delimiter_is_detected_per_file(final_snapshot):
+    """
+    Inside a block the separator is uniform, but it is not the same across
+    catalogs: NUGS128 uses tabs between the particle columns while NUGS2048
+    uses spaces. The block headers use yet another convention, which is why
+    seeking past them matters.
+    """
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    with ahf.open_membership(final_snapshot, table) as indexed:
+        assert indexed.delimiter in ("\t", " ")
+
+
+def test_indexed_membership_rejects_unknown_halo(final_snapshot):
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    with ahf.open_membership(final_snapshot, table) as indexed:
+        with pytest.raises(KeyError):
+            indexed.particles(10**9)
+
+
+def test_missing_fpos_falls_back_and_warns(final_snapshot, tmp_path, caplog):
+    """Without the index there is no choice but to parse the whole file."""
+    import shutil
+
+    stem = tmp_path / "DM.z0.000"
+    for suffix in ("halos", "particles"):
+        shutil.copy(final_snapshot.ahf(suffix), f"{stem}.AHF_{suffix}")
+
+    from pugs.simulation import Snapshot
+
+    snapshot = Snapshot(
+        index=0,
+        extension="DM",
+        path=final_snapshot.path,
+        ahf_stem=stem,
+        catalog_redshift=0.0,
+    )
+    assert not snapshot.has_ahf("fpos")
+
+    table = ahf.read_halo_table(snapshot.ahf("halos"))
+    with caplog.at_level("WARNING"):
+        membership = ahf.open_membership(snapshot, table)
+    assert isinstance(membership, ahf.ParticleMembership)
+    assert "AHF_fpos" in caplog.text
+
+
+def test_mismatched_fpos_length_is_an_error(final_snapshot, tmp_path):
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    short = tmp_path / "short.AHF_fpos"
+    short.write_text("\n".join(str(v) for v in [10, 20, 30]) + "\n")
+    with pytest.raises(ValueError, match="offsets for"):
+        ahf.open_indexed_membership(
+            final_snapshot.ahf("particles"),
+            short,
+            table.column("ID").to_numpy(),
+            table.column("npart").to_numpy(),
+        )

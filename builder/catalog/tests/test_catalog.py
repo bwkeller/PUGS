@@ -289,3 +289,71 @@ def test_unstamped_file_is_rejected(tmp_path):
     pq.write_table(pa.table({"halo_id": pa.array([1], pa.int64())}), tmp_path / "halos_x.parquet")
     with pytest.raises(io.SchemaVersionError, match="not written by pugs.io"):
         io.read_catalog(tmp_path)
+
+
+# ------------------------------------------------------- dependency revisions --
+
+
+def test_provenance_records_dependency_revisions(catalog):
+    """
+    A version number cannot identify a build: the pynbody fork carrying the
+    deterministic-units fix reports the same version as the release it was
+    branched from. The commit is what distinguishes them.
+    """
+    revisions = catalog.provenance["revisions"]
+    assert "pynbody" in revisions, revisions
+    entry = revisions["pynbody"]
+    assert len(entry["commit"]) == 40
+    assert entry["resolved_from"] in {"install record", "working tree"}
+
+
+def test_revisions_do_not_borrow_the_enclosing_repo(catalog):
+    """
+    A virtualenv usually sits inside a source checkout, so walking up from
+    site-packages finds *that project's* git repo. Every dependency would then
+    be stamped with the PUGS commit, which looks plausible and is wrong.
+    """
+    revisions = catalog.provenance["revisions"]
+    pugs_sha = catalog.provenance["git_sha"]
+    if pugs_sha:
+        borrowed = [n for n, r in revisions.items() if r.get("commit") == pugs_sha]
+        assert not borrowed, f"{borrowed} were attributed the PUGS commit"
+
+
+def test_installed_copies_are_not_treated_as_checkouts():
+    from pathlib import Path
+
+    assert io._is_installed_copy(Path("/x/.venv/lib/python3.12/site-packages/numpy"))
+    assert io._is_installed_copy(Path("/x/lib/python3/dist-packages/numpy"))
+    assert not io._is_installed_copy(Path("/home/me/code/pynbody/pynbody"))
+
+
+def test_vcs_install_record_is_preferred(tmp_path, monkeypatch):
+    """When pip installed from a git URL it records the exact commit (PEP 610)."""
+
+    class FakeDistribution:
+        def read_text(self, name):
+            assert name == "direct_url.json"
+            return json.dumps(
+                {
+                    "url": "https://github.com/bwkeller/pynbody.git",
+                    "vcs_info": {"vcs": "git", "commit_id": "a" * 40, "requested_revision": "pugs"},
+                }
+            )
+
+        def locate_file(self, name):
+            return tmp_path / name
+
+    monkeypatch.setattr(io.importlib_metadata, "distribution", lambda name: FakeDistribution())
+    revision = io._package_revision("pynbody")
+    assert revision["commit"] == "a" * 40
+    assert revision["resolved_from"] == "install record"
+    assert revision["url"].endswith("pynbody.git")
+
+
+def test_missing_package_yields_no_revision(monkeypatch):
+    def missing(name):
+        raise io.importlib_metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(io.importlib_metadata, "distribution", missing)
+    assert io._package_revision("nope") is None
