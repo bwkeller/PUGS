@@ -1,12 +1,11 @@
 ---
-title: The Two-Stage Pipeline
+title: The Pipeline
 ---
 
-# The Two-Stage Pipeline
+# The Pipeline
 
-PUGS processes cosmological data in two sequential stages. Each stage has its
-own builder directory and can be run independently once its prerequisites are
-met.
+PUGS processes cosmological data in sequential stages. Each stage has its own
+builder directory and can be run independently once its prerequisites are met.
 
 ---
 
@@ -41,36 +40,40 @@ See [Volume IC](volume-ic.md) for the full description.
 
 ---
 
-## Stage 2 — TANGOS halo catalog
+## Stage 2 — Halo catalog
 
-**Directory:** `builder/tangos_db/`
+**Directory:** `builder/catalog/`
 
 Takes the N-body snapshots produced by running the IC through your chosen
-N-body code, and builds a fully-featured TANGOS database containing halos
-with precomputed physical properties.
+N-body code, together with the AHF halo-finder output beside them, and builds
+a Parquet halo catalog. There is no intermediate database.
 
 ```
-N-body snapshots
+N-body snapshots + AHF output
         │
-        ▼
-  tangos add  ──► halos registered
+        ├── AHF_halos      ──► 43 finder columns, verbatim
+        ├── AHF_particles  ──► halo membership (snapshot indices)
+        ├── AHF_croco      ──► merger tree with shared-particle merits
+        │                          │
+        │                          ▼
+        │                   pugs.merger_forest
+        │                          │
+        │              N_mm, z_lmm, z25/z50/z75_mass,
+        │              main progenitor / descendant pointers
         │
-        ▼
-  tangos import-properties
-        │   (pugs.properties entry point)
-        ▼
-  tangos import-ahf-trees  ──► merger trees built
-        │
-        ▼
-  tangos write (per-halo properties)
-        │
-        ▼
-  pugs.db  (SQLite TANGOS database)
+        └── snapshot particles ──► pugs.halo_properties
+                                       │
+                        shrink_center, max_radius, R200/R500, M200/M500
+                                       │
+                                       ▼
+                        halos_<snapshot>.parquet, one per snapshot
+                             + provenance.json
 ```
 
-**Key outputs:** `pugs.db` — the SQLite database of halo properties.
+**Key outputs:** a catalog directory — one Parquet file per snapshot plus a
+`provenance.json` sidecar, readable without installing PUGS.
 
-See [TANGOS Database](tangos-db.md) for the full description.
+See [Halo Catalog](catalog.md) for the full description.
 
 ---
 
@@ -78,7 +81,7 @@ See [TANGOS Database](tangos-db.md) for the full description.
 
 **Directory:** `builder/container/`
 
-Bundles the Python stack, GenetIC, and the TANGOS halo catalog into a single
+Bundles the Python stack, GenetIC, and the Parquet halo catalog into a single
 Apptainer/Singularity image so the pipeline can be moved to any HPC site
 without rebuilding the dependency tree.
 
@@ -87,10 +90,10 @@ builder/container/pugs.def
             +
    pugs/, inputs/, builder/* ...
             +
-        pugs.db
+     the catalog directory
               │
               ▼
-    build_container.sh -d pugs.db
+    build_container.sh -c /path/to/catalog
               │
               ▼
         pugs.sif  (portable SIF)
@@ -104,11 +107,13 @@ See [Container Builder](container.md) for the full description.
 
 ## Zoom-in ICs
 
-After the TANGOS database is built, individual halos can be used to generate
-zoom-in initial conditions for higher-resolution re-simulations:
+After the catalog is built, individual halos can be used to generate zoom-in
+initial conditions for higher-resolution re-simulations. The particle ids are
+read from the AHF membership, or selected from the snapshot within a multiple
+of the halo's radius:
 
 ```
-pugs.db  ──► pugs.genetic.write_particle_ids()  ──► id_file.txt
+halo_id + snapshots  ──► pugs.genetic.write_particle_ids()  ──► id_file.txt
                                                           │
           inputs/zoom_template.txt                        │
                      │                                    │
@@ -125,6 +130,6 @@ See [pugs.genetic](../api/genetic.md) for the API.
 :hidden:
 
 volume-ic
-tangos-db
+catalog
 container
 ```

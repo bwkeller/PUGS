@@ -4,31 +4,64 @@ title: API Reference
 
 # API Reference
 
-The `pugs` Python package provides two public submodules.
+The `pugs` Python package builds and reads the Parquet halo catalog. It has no
+database layer: every module works from the AHF output files and the snapshots
+directly.
 
 ---
 
-## `pugs.properties`
+## Building a catalog
 
-Seven TANGOS property classes that compute halo physics from N-body particle
-data. These classes are auto-discovered by TANGOS via the
-`tangos.property_modules` entry point registered in `pyproject.toml`.
+### `pugs.export`
 
-You do not normally call these classes directly — TANGOS invokes them when you
-run `tangos write` or `tangos import-properties`. Their outputs are then
-accessible via the TANGOS query interface.
+The whole pipeline. Discovers snapshots, reads AHF's halo tables, builds the
+merger forest, measures the particle-derived properties, and writes one Parquet
+file per snapshot.
 
-See [pugs.properties](properties.md) for the full class reference.
+See [the catalog reference](catalog.md).
+
+### `pugs.ahf`
+
+Readers for AHF's output: `AHF_halos`, `AHF_particles`, `AHF_substructure` and
+the `AHF_croco` merger tree.
+
+See [pugs.ahf](ahf.md).
+
+### `pugs.simulation`
+
+Snapshot discovery and ordering, and the deterministic `halo_id` scheme.
+
+### `pugs.halo_properties`
+
+Per-halo physics measured from the snapshot with pynbody: shrinking-sphere
+centre, `max_radius`, and the spherical-overdensity radii and masses.
+
+### `pugs.merger_forest`
+
+The merger forest, built from AHF's own tree files. Major-merger counts, the
+redshift of the last major merger, and mass-assembly redshifts.
 
 ---
 
-## `pugs.genetic`
+## Reading a catalog
 
-Helper functions for constructing zoom-in initial conditions for individual
-halos. These are thin wrappers around TANGOS queries and template file
-manipulation, intended to be called from a script or notebook.
+### `pugs.io`
 
-See [pugs.genetic](genetic.md) for the full function reference.
+The format layer: the schema, the units, and the provenance. `read_catalog()`
+returns a `Catalog` exposing `.table`, `.unit()`, `.system()`, `.description()`
+and `.provenance`.
+
+See [the catalog reference](catalog.md).
+
+---
+
+## Zoom-in initial conditions
+
+### `pugs.genetic`
+
+Helpers for turning a halo in the catalog into GenetIC input.
+
+See [pugs.genetic](genetic.md).
 
 ---
 
@@ -37,38 +70,39 @@ See [pugs.genetic](genetic.md) for the full function reference.
 ```{toctree}
 :hidden:
 
-properties
+catalog
+ahf
 genetic
 ```
 
 ```python
-import tangos
-import pugs.genetic as genetic
+from pugs.io import read_catalog
 
-# Point TANGOS at the database
-# (or set TANGOS_DB_CONNECTION before importing tangos)
+catalog = read_catalog("NUGS128_catalog")
 
-# Get the first halo at the final snapshot
-halo = tangos.get_halo("NUGS128/016/%1")
+print(len(catalog))                    # halos across all snapshots
+print(catalog.unit("M200"))            # 'Msol'
+print(catalog.system("Mhalo"))         # 'finder' -- comoving, h-scaled
 
-# Query precomputed properties
-r200 = halo["max_radius"]          # kpc/h
-m200 = halo["M200"]                # Msol/h
-r500 = halo["R500"]                # kpc/h
-m500 = halo["M500"]                # Msol/h
-z50  = halo["z50_mass"]            # redshift of 50% mass assembly
-n_mm = halo["N_mm"]                # number of major mergers
-z_lmm = halo["z_lmm"]             # redshift of last major merger
+# Read only the columns you need
+masses = read_catalog("NUGS128_catalog", columns=["halo_id", "z", "M200", "N_mm"])
+```
 
-# Decompress and retrieve the particle IDs
-ids = halo.calculate("ids()")      # numpy int64 array
+Or with no PUGS import at all:
 
-# Generate zoom-in IC files for this halo
-genetic.write_particle_ids(halo.id, filename="halo1_ids.txt")
-genetic.build_param_file(
-    filename="genetIC_zoom.txt",
-    outname="halo1_zoom",
-    base_grid=2048,
-    zoom_grid=[10, 2048],
-)
+```sql
+SELECT snapshot, count(*), max(M200)
+FROM 'NUGS128_catalog/halos_*.parquet'
+WHERE M200 > 1e12
+GROUP BY snapshot
+ORDER BY snapshot;
+```
+
+Generating a zoom IC for a halo:
+
+```python
+from pugs.genetic import build_param_file, write_particle_ids
+
+n = write_particle_ids("/path/to/NUGS2048", halo_id, "id_file.txt", radius_factor=8)
+build_param_file(filename="genetIC_zoom.txt", outname="halo1", base_grid=2048)
 ```

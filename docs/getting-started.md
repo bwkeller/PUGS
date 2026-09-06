@@ -26,9 +26,13 @@ cd PUGS
 pip install .[dev]
 ```
 
-`pip install .` (without `[dev]`) is sufficient for using the `pugs` Python
-package to query an existing TANGOS database; the `[dev]` extras add the build
-tools (CAMB, testing, linters).
+`pip install .` (without `[dev]`) is sufficient for building and reading halo
+catalogs; the `[dev]` extras add the build tools (CAMB, testing, linters).
+
+Reading an existing catalog needs no PUGS install at all — it is plain Parquet,
+readable by DuckDB, polars, pandas or any other Arrow-aware tool. PUGS is only
+required to *build* one, or to get the units and provenance attached
+automatically.
 
 ---
 
@@ -53,22 +57,25 @@ md5sum -c .checksums.txt
 
 ---
 
-## Quickstart: TANGOS database
+## Quickstart: halo catalog
 
-The TANGOS database build requires:
+The catalog build requires a directory holding N-body snapshots together with
+the AHF halo-finder output beside them (`.AHF_halos`, `.AHF_particles` and
+`.AHF_croco` per snapshot).
 
-- A set of N-body simulation snapshots stored under `$TANGOS_SIMULATION_FOLDER`
-- The environment variable `TANGOS_DB_CONNECTION` pointing to a SQLite file path
-
-Edit `builder/tangos_db/config_vars` to match your paths, then:
+Edit `builder/catalog/test_vars` to match your paths, then:
 
 ```bash
-cd builder/tangos_db
-source config_vars
-./build_tangos.sh
+cd builder/catalog
+source test_vars
+./build_catalog.sh test_vars
 ```
 
-Once the database is built, run the test suite to confirm correctness:
+This writes one Parquet file per snapshot plus a `provenance.json` sidecar.
+Add `--no-measure` to `pugs.export` to skip the particle-derived columns, which
+turns a run of minutes into one of seconds.
+
+Once the catalog is built, run the test suite to confirm correctness:
 
 ```bash
 pytest
@@ -78,15 +85,32 @@ pytest
 
 ## Using the Python API
 
-After installing the package and sourcing `config_vars`, you can query halo
-data directly:
+Read a catalog, with units and provenance attached:
 
 ```python
-import tangos
+from pugs.io import read_catalog
+
+catalog = read_catalog("NUGS128_catalog")
+print(len(catalog), "halos")
+print(catalog.unit("M200"), catalog.system("M200"))   # 'Msol' 'physical'
+print(catalog.unit("Mhalo"), catalog.system("Mhalo")) # 'Msol / littleh' 'finder'
+```
+
+Or query it with DuckDB, no PUGS import needed:
+
+```python
+import duckdb
+
+duckdb.sql("SELECT snapshot, count(*) FROM 'NUGS128_catalog/halos_*.parquet' GROUP BY snapshot")
+```
+
+Generate zoom-in IC inputs for a halo:
+
+```python
 import pugs.genetic as genetic
 
-# Export particle IDs for halo 1 to disk (needed by GenetIC for zoom ICs)
-genetic.write_particle_ids(1, filename="halo1_ids.txt")
+# Export particle IDs out to 8 virial radii (needed by GenetIC for zoom ICs)
+genetic.write_particle_ids("/path/to/NUGS128", halo_id, "halo1_ids.txt", radius_factor=8)
 
 # Generate a GenetIC parameter file for the zoom simulation
 genetic.build_param_file(
@@ -105,8 +129,11 @@ See the [API reference](api/index.md) for full details.
 
 | Variable | Description | Example |
 |---|---|---|
-| `TANGOS_DB_CONNECTION` | Path to the SQLite database file | `pugs.db` |
-| `TANGOS_SIMULATION_FOLDER` | Parent directory containing snapshot folders | `$HOME/data` |
-| `SIM` | Simulation folder name inside `TANGOS_SIMULATION_FOLDER` | `NUGS128` |
+| `PUGS_SIMULATION` | Directory holding the snapshots and AHF output | `$HOME/data/NUGS128` |
+| `PUGS_NAME` | Simulation name recorded in the catalog | `NUGS128` |
+| `PUGS_CATALOG` | Output catalog directory | `NUGS128_catalog` |
+| `PUGS_MIN_PARTICLES` | Minimum particles for a halo to be kept | `500` |
 
-These are set by sourcing `builder/tangos_db/config_vars`.
+These are set by sourcing `builder/catalog/test_vars` (or `prod_vars`). Each
+defers to a value already exported, so you can override any of them from the
+environment.

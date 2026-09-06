@@ -103,8 +103,8 @@ n &= 0xFFFFFFFF
 The header is then rewritten as:
 `(time, n_truncated, ndim=3, ng=0, nd=n_truncated, ns=0, pad=overflow_bits)`
 
-This scheme is specific to how TANGOS parses the tipsy format; it is not
-needed for the $128^3$ test volume.
+This scheme is specific to how pynbody's tipsy reader parses the header; it is
+not needed for the $128^3$ test volume.
 
 ---
 

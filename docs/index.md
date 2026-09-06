@@ -1,7 +1,7 @@
 # PUGS: Portable Universal Galaxy Sampler
 
 [![build_volume_ic](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_volume_ic.yml)
-[![Tangos DB Build Test](https://github.com/bwkeller/PUGS/actions/workflows/build_tangos_db.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_tangos_db.yml)
+[![Catalog Build Test](https://github.com/bwkeller/PUGS/actions/workflows/build_catalog.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_catalog.yml)
 [![Container Build Test](https://github.com/bwkeller/PUGS/actions/workflows/build_container.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/build_container.yml)
 [![linter](https://github.com/bwkeller/PUGS/actions/workflows/linter.yml/badge.svg)](https://github.com/bwkeller/PUGS/actions/workflows/linter.yml)
 
@@ -12,9 +12,11 @@ It provides two integrated pipelines:
    dark matter volume using [CAMB](https://camb.info) and [GenetIC](https://github.com/pynbody/genetIC),
    seeded with Planck 2018 cosmology.
 
-2. **TANGOS halo catalog** — ingests N-body snapshots into a
-   [TANGOS](https://tangos.readthedocs.io) database and computes a rich set of halo
-   properties, merger trees, and assembly histories.
+2. **Halo catalog** — turns N-body snapshots and their AHF halo-finder output
+   into a Parquet catalog with halo properties, merger trees, and assembly
+   histories. Every column is derived directly from the AHF files and the
+   snapshots; there is no database in the pipeline, and reading the result
+   needs nothing but a Parquet reader.
 
 The `pugs` Python package also exposes helpers for generating **zoom-in initial
 conditions** for individual halos identified in the volume.
@@ -31,7 +33,7 @@ conditions** for individual halos identified in the volume.
 Install PUGS and run your first build.
 :::
 
-:::{grid-item-card} The Two-Stage Pipeline
+:::{grid-item-card} The Pipeline
 :link: pipeline/index
 :link-type: doc
 Understand the data flow from cosmological parameters to halo catalogs.
@@ -40,7 +42,7 @@ Understand the data flow from cosmological parameters to halo catalogs.
 :::{grid-item-card} API Reference
 :link: api/index
 :link-type: doc
-Full reference for `pugs.properties` and `pugs.genetic`.
+Full reference for building and reading the halo catalog.
 :::
 
 :::{grid-item-card} Cosmological Background
@@ -69,12 +71,18 @@ development
 
 ```
 pugs/
-├── properties.py   # TANGOS halo property calculators
-└── genetic.py      # Zoom-in IC generation helpers
+├── ahf.py              # Readers for AHF halo-finder output
+├── simulation.py       # Snapshot discovery, ordering, halo ids
+├── halo_properties.py  # Per-halo physics measured with pynbody
+├── merger_forest.py    # Merger trees from AHF's own tree files
+├── export.py           # Builds the Parquet catalog
+├── io.py               # Catalog format: schema, units, provenance
+├── columns.toml        # The data dictionary
+└── genetic.py          # Zoom-in IC generation helpers
 
 builder/
 ├── volume_ic/      # Stage 1 — Volume initial conditions
-├── tangos_db/      # Stage 2 — TANGOS database construction
+├── catalog/        # Stage 2 — Parquet halo catalog
 └── container/      # Stage 3 — Apptainer/Singularity packaging
 
 inputs/

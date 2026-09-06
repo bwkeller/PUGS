@@ -40,17 +40,30 @@ isort --check-only .
 
 ## Tests
 
-Tests require the NUGS128 test simulation and a configured TANGOS database.
-In CI the data is downloaded from `nbody.shop`; locally you need to have run
-the database build first.
+Tests require the NUGS128 test simulation. In CI the data is downloaded from
+`nbody.shop`; locally, point `PUGS_SIMULATION` at it (or place it at
+`~/data/NUGS128`). No catalog needs to exist beforehand — the fixtures build
+one into a temporary directory.
 
 ```bash
-cd builder/tangos_db
-source config_vars
-pytest                                          # All tests
-pytest tests/test_properties.py                 # Single file
-pytest tests/test_properties.py::test_virial_radii  # Single test
+cd builder/catalog
+source test_vars
+pytest                                                   # All tests
+pytest tests/test_halo_properties.py                     # Single file
+pytest tests/test_halo_properties.py::test_finder_mass_is_the_member_particle_mass
 ```
+
+| File | What it covers |
+|---|---|
+| `test_ahf.py` | The AHF file readers, and the assumptions they rest on |
+| `test_simulation.py` | Snapshot discovery, ordering, and the `halo_id` scheme |
+| `test_halo_properties.py` | Physics, checked against direct particle computations |
+| `test_merger_forest.py` | Tree structure, merger counts, assembly redshifts |
+| `test_catalog.py` | Parquet output, schema, units, provenance |
+
+The physics tests deliberately recompute each quantity from the particle data
+rather than comparing against another stored value, so a bug in the measurement
+code cannot agree with itself.
 
 ### Test data
 
@@ -61,46 +74,43 @@ volume intended for fast CI runs. The snapshots can be downloaded from:
 https://nbody.shop/NUGS128.tar.gz
 ```
 
-After extracting, set `TANGOS_SIMULATION_FOLDER` to the parent directory
-and `SIM=NUGS128`.
+After extracting, set `PUGS_SIMULATION` to the simulation directory itself
+(e.g. `$HOME/data/NUGS128`).
 
 ---
 
-## Adding a new property
+## Adding a new column
 
-1. Add a class to `pugs/properties.py` that inherits from the appropriate
-   TANGOS base class.
+1. Add a `[columns.<name>]` block to `pugs/columns.toml` giving its `dtype`,
+   `unit`, `system` and `description`. The writer raises
+   `UndocumentedColumnError` if you skip this, so the data dictionary cannot
+   fall behind the data.
 
-2. Set `names` to the TANGOS property name (or a tuple of names if the
-   class returns multiple values).
+2. Add the name to the right tuple in `pugs/export.py`:
 
-3. Implement `calculate(self, particle_data, existing_properties)`.
+   | Tuple | For |
+   |---|---|
+   | `AHF_COLUMNS` | A column copied verbatim from `AHF_halos` |
+   | `MEASURED_COLUMNS` | Something measured from particle data |
+   | `TREE_COLUMNS` | Something derived from the merger forest |
+   | `DERIVED_COLUMNS` | Arithmetic on columns already present |
 
-4. Optionally implement:
-   - `region_specification(existing_properties)` — returns a pynbody filter
-     defining which particles to load.
-   - `requires_property(self)` — returns a list of prerequisite property names.
-   - `preloop(cls, sim, db_timestep)` — classmethod called once per timestep
-     to cache data shared across halos (avoids repeated TANGOS queries).
+3. For a measured column, implement it in `pugs/halo_properties.py` and return
+   it from `HaloMeasurement.as_dict()`. A vector quantity is written as one
+   scalar column per component (as `shrink_center_x/y/z`), each documented
+   separately.
 
-5. Register the class in `pyproject.toml`:
+4. Bump `schema_version` in `columns.toml` **only** if you renamed or removed a
+   column, or changed a unit. Adding a column is backwards compatible.
 
-   ```toml
-   [project.entry-points."tangos.property_modules"]
-   properties = "pugs.properties"
-   ```
+5. Add tests to `builder/catalog/tests/`.
 
-   Because the entire module is registered, any new class in
-   `pugs/properties.py` is automatically discovered — no additional entry
-   needed.
+### Cost
 
-6. Add corresponding tests to `builder/tangos_db/tests/test_properties.py`.
-
-### Expensive properties (z=0 only)
-
-Properties that traverse the full merger tree or store large arrays should
-be written only at the final snapshot. The convention is to add them to the
-`tangos write ... --latest` command in `build_tangos.sh`.
+Columns read from AHF or derived from the forest are effectively free — the
+files are read once per snapshot regardless. Columns measured from particle
+data cost one pynbody pass per halo and dominate the runtime; `--no-measure`
+skips them entirely when they are not needed.
 
 ---
 
@@ -110,12 +120,13 @@ Three GitHub Actions workflows run on every push and pull request:
 
 | Workflow | File | What it tests |
 |---|---|---|
-| Linter | `linter.yml` | Black, flake8, isort |
+| Linter | `linter.yml` | Black, flake8, isort, shellcheck |
 | Volume IC | `build_volume_ic.yml` | 128³ IC build + MD5 checksums |
-| TANGOS DB | `build_tangos_db.yml` | Full DB build + pytest |
+| Catalog | `build_catalog.yml` | Full catalog build + pytest |
+| Container | `build_container.yml` | SIF build + smoke test |
 
-The TANGOS DB workflow downloads NUGS128 from `nbody.shop`, builds the
-database, and runs the test suite in a single job.
+The catalog workflow downloads NUGS128 from `nbody.shop`, builds the catalog,
+and runs the test suite in a single job.
 
 ---
 
@@ -135,11 +146,13 @@ git push origin v1.2.3
 
 Core runtime dependencies (pinned in `pyproject.toml`):
 
-| Package | Version | Purpose |
-|---|---|---|
-| `tangos` | 1.10.0 | Halo database and merger trees |
-| `pynbody` | 2.3.2 | N-body particle analysis |
-| `numpy` | (transitive) | Array operations |
+| Package | Purpose |
+|---|---|
+| `pynbody` | Snapshot reading and N-body particle analysis |
+| `pyarrow` | Parquet output and the Arrow schema/metadata |
+| `numpy` | Array operations |
+
+Reading a finished catalog requires none of these — it is plain Parquet.
 
 Dev/build extras:
 
@@ -150,8 +163,31 @@ Dev/build extras:
 | `flake8` | 7.3.0 | Linting |
 | `isort` | 7.0.0 | Import sorting |
 | `pytest` | 9.0.2 | Testing |
+| `pytest-timeout` | 2.4.0 | Fails a hung test with a traceback instead of stalling the run |
+| `duckdb` | >=1.0 | Verifying the catalog through a non-Arrow reader |
 | `requests` | 2.32.5 | HTTP downloads (CI) |
+| `shellcheck-py` | latest | Shell script linting |
 | `pre-commit` | latest | Git hooks |
+
+### Test timeouts
+
+`pyproject.toml` sets a per-test timeout of 3600 s using
+`timeout_method = "thread"`. Both values are deliberate:
+
+- The limit is generous because nearly all of the suite's cost is the
+  session-scoped catalog fixture, which lands on whichever test triggers it
+  first — around 2.5 minutes on an idle machine, but closer to 20 on a shared
+  one under load. A tighter limit would fail on contention rather than on a
+  real hang.
+- The `thread` method is used rather than the default `signal` because a
+  signal-based timeout cannot interrupt a C call: it only fires once Python
+  regains control. Measured against a single long BLAS call with a 5 s limit,
+  `signal` reported at 9.7 s (when the call finished on its own) while
+  `thread` reported at 5.2 s. With a genuine hang inside pynbody or pyarrow,
+  `signal` would never fire at all.
+
+Note that `thread` aborts the whole session rather than failing one test and
+continuing, which is the right trade when the run is already doomed.
 
 GenetIC itself is not a Python dependency — it is run via the official Docker
 image `apontzen/genetic:1.5.0`.
