@@ -37,6 +37,7 @@ docs = [
 
 [project.scripts]
 pugs-export = "pugs.export:main"
+pugs-particle-ids = "pugs.particle_ids:main"
 
 [tool.pytest.ini_options]
 # A hung test should fail with a traceback naming itself, rather than sitting

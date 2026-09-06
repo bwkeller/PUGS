@@ -48,7 +48,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 #: Files making up a catalog; chosen so the JSON sidecar is not swept up by a glob.
-CATALOG_GLOB = "halos_*.parquet"
+CATALOG_PREFIX = "halos"
+CATALOG_GLOB = f"{CATALOG_PREFIX}_*.parquet"
+
+#: Particle-id shell files, written alongside the halo tables.
+SHELL_PREFIX = "shells"
+SHELL_GLOB = f"{SHELL_PREFIX}_*.parquet"
+
 PROVENANCE_FILENAME = "provenance.json"
 
 #: zstd beats gzip on both ratio and speed for this data, and every reader we
@@ -100,6 +106,7 @@ _ARROW_TYPES: dict[str, pa.DataType] = {
     "float64": pa.float64(),
     "string": pa.string(),
     "bool": pa.bool_(),
+    "list<int64>": pa.list_(pa.int64()),
 }
 
 
@@ -167,16 +174,34 @@ def apply_schema_metadata(table: pa.Table, **footer: str) -> pa.Table:
     return table.cast(pa.schema(fields, metadata=file_metadata))
 
 
-def write_snapshot(table: pa.Table, directory: Path | str, snapshot: str, **footer: str) -> Path:
-    """Write one snapshot's halos to ``<directory>/halos_<snapshot>.parquet``."""
+def write_snapshot(
+    table: pa.Table,
+    directory: Path | str,
+    snapshot: str,
+    prefix: str = CATALOG_PREFIX,
+    column_encoding: dict[str, str] | None = None,
+    **footer: str,
+) -> Path:
+    """Write one snapshot's table to ``<directory>/<prefix>_<snapshot>.parquet``.
+
+    ``column_encoding`` pins the Parquet encoding of particular columns, given
+    as ``{"column.list.element": "DELTA_BINARY_PACKED"}`` for a list column's
+    values.  Dictionary encoding is switched off whenever it is used: pyarrow
+    will not apply both, and a dictionary would replace the values with
+    dictionary indices, leaving the delta encoder nothing to compress.  The
+    cost is negligible here -- the only column that dictionary-encodes well is
+    the constant ``snapshot`` string, which zstd handles anyway.
+    """
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"halos_{snapshot}.parquet"
+    path = directory / f"{prefix}_{snapshot}.parquet"
     pq.write_table(
         apply_schema_metadata(table, pugs_snapshot=snapshot, **footer),
         path,
         compression=COMPRESSION,
         compression_level=COMPRESSION_LEVEL,
+        use_dictionary=column_encoding is None,
+        column_encoding=column_encoding,
     )
     return path
 
@@ -277,12 +302,12 @@ class Catalog:
         return self.table.to_pandas()
 
 
-def catalog_files(path: Path | str) -> list[Path]:
+def catalog_files(path: Path | str, glob: str = CATALOG_GLOB) -> list[Path]:
     """The Parquet files making up a catalog, sorted by snapshot."""
     path = Path(path)
     if path.is_file():
         return [path]
-    return sorted(path.glob(CATALOG_GLOB))
+    return sorted(path.glob(glob))
 
 
 def read_catalog(
@@ -290,6 +315,7 @@ def read_catalog(
     columns: Sequence[str] | None = None,
     *,
     check_version: bool = True,
+    glob: str = CATALOG_GLOB,
 ) -> Catalog:
     """Read a catalog directory (or a single Parquet file).
 
@@ -303,9 +329,9 @@ def read_catalog(
     an exception.
     """
     path = Path(path)
-    files = catalog_files(path)
+    files = catalog_files(path, glob)
     if not files:
-        raise FileNotFoundError(f"no {CATALOG_GLOB} files under {path}")
+        raise FileNotFoundError(f"no {glob} files under {path}")
 
     if check_version:
         for file in files:
@@ -313,6 +339,21 @@ def read_catalog(
 
     table = pq.read_table(files, columns=list(columns) if columns else None)
     return Catalog(table=table, provenance=read_provenance(path), path=path)
+
+
+def read_shells(
+    path: Path | str,
+    columns: Sequence[str] | None = None,
+    *,
+    check_version: bool = True,
+) -> Catalog:
+    """Read the particle-id shell files of a catalog.
+
+    The ``particle_ids`` column is by far the largest thing in a PUGS catalog,
+    so pass ``columns`` to inspect the shell geometry without reading it --
+    ``["halo_id", "shell", "n_particles"]`` costs almost nothing.
+    """
+    return read_catalog(path, columns, check_version=check_version, glob=SHELL_GLOB)
 
 
 def read_provenance(path: Path | str) -> dict[str, Any]:

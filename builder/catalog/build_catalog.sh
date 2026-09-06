@@ -21,3 +21,16 @@ if [ -n "$PUGS_NAME" ]; then
 fi
 
 python -m pugs.export "$PUGS_SIMULATION" --output "$PUGS_CATALOG" "${ARGS[@]}"
+
+# Particle-id shells for the z=0 halos.  These are much the largest part of a
+# catalog, so they are opt-in: set PUGS_PARTICLE_IDS=1 to build them.
+if [ -n "$PUGS_PARTICLE_IDS" ]; then
+	ID_ARGS=()
+	if [ -n "$PUGS_NAME" ]; then
+		ID_ARGS+=(--name "$PUGS_NAME")
+	fi
+	if [ -n "$PUGS_SHELL_REFERENCE" ]; then
+		ID_ARGS+=(--reference "$PUGS_SHELL_REFERENCE")
+	fi
+	python -m pugs.particle_ids "$PUGS_SIMULATION" "$PUGS_CATALOG" "${ID_ARGS[@]}"
+fi

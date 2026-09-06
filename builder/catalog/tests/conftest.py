@@ -60,3 +60,12 @@ def catalog_dir(folder, tmp_path_factory):
 @pytest.fixture(scope="session")
 def catalog(catalog_dir):
     return read_catalog(catalog_dir)
+
+
+@pytest.fixture(scope="session")
+def shells_dir(folder, catalog_dir):
+    """The same catalog, with the particle-id shells written into it."""
+    from pugs import particle_ids
+
+    particle_ids.export_particle_ids(folder, catalog_dir, name=SIMULATION_NAME)
+    return catalog_dir

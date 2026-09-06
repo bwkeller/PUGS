@@ -6,6 +6,9 @@ AHF writes one set of plain-text files per snapshot, all sharing the stem
 
 ``AHF_halos``
     One row per halo, 83 whitespace-separated columns, names in a ``#`` header.
+    The separator is not consistent between AHF runs -- the NUGS128 catalogs
+    are tab-separated with space padding, the NUGS2048 ones single-space -- so
+    it is detected from the header rather than assumed.
 ``AHF_particles``
     Halo membership: a ``<npart> <halo_id>`` line followed by that many
     ``<particle> <type>`` lines.  The particle values are *indices into the
@@ -47,33 +50,53 @@ def read_halo_table(path: Path | str) -> pa.Table:
     Column types are inferred by pyarrow, which gets the integer columns
     (``ID``, ``hostHalo``, ``numSubStruct``, ``npart``) right and everything
     else as double.  pyarrow's CSV reader is used rather than ``np.loadtxt``
-    because the production catalogs have millions of rows.
+    because the production tables have millions of rows and are gigabytes
+    apiece.
     """
     path = Path(path)
-    names = _halo_column_names(path)
+    header = _header_line(path)
+    delimiter = _delimiter(header)
+    names = _halo_column_names(header, delimiter, path)
+
     table = pv.read_csv(
         path,
         read_options=pv.ReadOptions(skip_rows=1, autogenerate_column_names=True),
-        parse_options=pv.ParseOptions(delimiter="\t", ignore_empty_lines=True),
+        parse_options=pv.ParseOptions(delimiter=delimiter, ignore_empty_lines=True),
     )
     if table.num_columns < len(names):
         raise ValueError(
-            f"{path}: header names {len(names)} columns but the data has {table.num_columns}"
+            f"{path}: header names {len(names)} columns but the data parsed as "
+            f"{table.num_columns} with delimiter {delimiter!r}"
         )
     # A trailing delimiter on the header line can leave an unnamed extra column.
     table = table.select(list(range(len(names))))
     return table.rename_columns(names)
 
 
-def _halo_column_names(path: Path) -> list[str]:
-    """Column names from the ``#ID(1)\\thostHalo(2)...`` header line."""
+def _header_line(path: Path) -> str:
     with open(path) as handle:
         header = handle.readline()
     if not header.startswith("#"):
         raise ValueError(f"{path}: expected a '#' header line, got {header[:40]!r}")
+    return header
 
+
+def _delimiter(header: str) -> str:
+    """Field separator of an AHF table, taken from its header line.
+
+    AHF is not consistent about this between runs: the NUGS128 catalogs are
+    tab-separated with the columns space-padded to width, while the NUGS2048
+    ones are single-space separated with no tabs anywhere.  Assuming either one
+    makes the reader return a single column of text on the other, which then
+    fails much later with a confusing missing-column error.
+    """
+    return "\t" if "\t" in header else " "
+
+
+def _halo_column_names(header: str, delimiter: str, path: Path) -> list[str]:
+    """Column names from the ``#ID(1) hostHalo(2) ...`` header line."""
     names = []
-    for field in header[1:].strip().split("\t"):
+    for field in header[1:].strip().split(delimiter):
         field = field.strip()
         if not field:
             continue

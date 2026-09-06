@@ -4,3 +4,5 @@ export PUGS_SIMULATION=${PUGS_SIMULATION:-$HOME/data/NUGS128}
 export PUGS_NAME=${PUGS_NAME:-NUGS128}
 export PUGS_CATALOG=${PUGS_CATALOG:-NUGS128_catalog}
 export PUGS_MIN_PARTICLES=${PUGS_MIN_PARTICLES:-500}
+# Set to 1 to also store the particle-id shells for the z=0 halos.
+export PUGS_PARTICLE_IDS=${PUGS_PARTICLE_IDS:-}

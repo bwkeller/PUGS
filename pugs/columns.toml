@@ -185,7 +185,7 @@ description = "Highest redshift at which the main branch still held 75% of this 
 dtype = "int64"
 unit = "dimensionless"
 system = "finder"
-description = "AHF id of the host halo, or -1 if this halo is not a subhalo"
+description = "AHF id of the host halo of a subhalo. The no-host sentinel depends on where the run numbers halo ids from: -1 where ids start at 0 (NUGS128), 0 where they start at 1 (NUGS2048). Test against the smallest ID in the same snapshot rather than hard-coding either"
 
 [columns.numSubStruct]
 dtype = "int64"
@@ -440,3 +440,57 @@ dtype = "float64"
 unit = "dimensionless"
 system = "finder"
 description = "Virial ratio 2T/U from the AHF Ekin and Epot columns"
+
+# ------------------------------------------ particle-id shells (shells_*) ---
+# These describe the shells_<snapshot>.parquet files rather than the halo
+# tables.  One row per (halo, shell); the innermost shell is a sphere, since
+# its inner edge is zero.  Ids within a shell are in ascending order, which is
+# what lets Parquet's DELTA_BINARY_PACKED encoding store them as differences.
+
+[columns.shell]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "0-based shell index, innermost first; shell s spans r_inner_rvir to r_outer_rvir times the reference radius"
+
+[columns.reference_radius]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "The halo radius the shell edges are multiples of, R200 unless the catalog says otherwise (see provenance particle_ids.reference_radius)"
+
+[columns.r_inner_rvir]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Inner edge of the shell, in units of the reference radius"
+
+[columns.r_outer_rvir]
+dtype = "float64"
+unit = "dimensionless"
+system = "pugs"
+description = "Outer edge of the shell, in units of the reference radius"
+
+[columns.r_inner]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Inner edge of the shell"
+
+[columns.r_outer]
+dtype = "float64"
+unit = "kpc"
+system = "physical"
+description = "Outer edge of the shell"
+
+[columns.n_particles]
+dtype = "int64"
+unit = "dimensionless"
+system = "pugs"
+description = "Number of particles in this shell; equals the length of particle_ids, and can be read without touching that column"
+
+[columns.particle_ids]
+dtype = "list<int64>"
+unit = "dimensionless"
+system = "pugs"
+description = "Snapshot indices of the particles in this shell, ascending. These index the snapshot directly, matching AHF's convention; the tipsy files carry no iord array"

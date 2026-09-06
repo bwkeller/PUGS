@@ -36,6 +36,13 @@ Snapshot discovery and ordering, and the deterministic `halo_id` scheme.
 Per-halo physics measured from the snapshot with pynbody: shrinking-sphere
 centre, `max_radius`, and the spherical-overdensity radii and masses.
 
+### `pugs.particle_ids`
+
+Stores the particle ids around each z=0 halo as radial shells, so a zoom region
+can be built from the catalog alone.
+
+See [pugs.particle_ids](particle-ids.md).
+
 ### `pugs.merger_forest`
 
 The merger forest, built from AHF's own tree files. Major-merger counts, the
@@ -72,6 +79,7 @@ See [pugs.genetic](genetic.md).
 
 catalog
 ahf
+particle-ids
 genetic
 ```
 
@@ -98,11 +106,12 @@ GROUP BY snapshot
 ORDER BY snapshot;
 ```
 
-Generating a zoom IC for a halo:
+Generating a zoom IC for a halo, from the catalog's stored shells (no
+snapshots needed):
 
 ```python
-from pugs.genetic import build_param_file, write_particle_ids
+from pugs.genetic import build_param_file, write_particle_ids_from_catalog
 
-n = write_particle_ids("/path/to/NUGS2048", halo_id, "id_file.txt", radius_factor=8)
+n = write_particle_ids_from_catalog("NUGS2048_catalog", halo_id, "id_file.txt", radius_factor=3.0)
 build_param_file(filename="genetIC_zoom.txt", outname="halo1", base_grid=2048)
 ```

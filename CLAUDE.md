@@ -85,11 +85,17 @@ Periodicity is handled two different ways on purpose. Centring wraps explicitly,
 
 **`pugs.export`** — Orchestration. `AHF_COLUMNS` / `MEASURED_COLUMNS` / `TREE_COLUMNS` / `DERIVED_COLUMNS` define what is written. Assembly history is written for every snapshot, not only z=0.
 
+**`pugs.particle_ids`** — Stores the particles around each z=0 halo as 10 concentric shells of 0.5 R_vir out to 5 R_vir (the innermost is a sphere), one row per (halo, shell), in `shells_<snapshot>.parquet`.
+
+Bucketing by radius rather than sorting by it is the whole point: the region selection already returns ascending indices, so **no sort is applied** and each shell's ids stay nearly consecutive, which lets Parquet's `DELTA_BINARY_PACKED` encoding store differences instead of values. Measured on NUGS128, that is 7.8x smaller than raw int64 against 4.8x for the old radially-sorted zlib blobs. Dictionary encoding must stay off or there is nothing left to delta.
+
+Opt-in via `PUGS_PARTICLE_IDS=1`; reads centres and `R200` from the existing catalog rather than recomputing.
+
 **`pugs.io`** — The catalog format. Owns the schema (built from `pugs/columns.toml`, never inferred from the data), attaches units as Arrow field metadata plus a file-level JSON mirror for non-Arrow readers, and refuses to read a catalog whose `schema_version` does not match. `read_catalog()` returns a `Catalog` with `.table`, `.unit()`, `.system()`, `.description()`, `.provenance`.
 
 **`pugs/columns.toml`** — The data dictionary: `dtype`, `unit`, `system`, `description` per column, plus `schema_version`. TOML rather than YAML because YAML 1.1 parses `1e10` and `2.775e11` as *strings*. Adding a column to the export requires adding it here first — the writer raises `UndocumentedColumnError` otherwise.
 
-**`pugs.genetic`** — Zoom-in IC helpers. `particle_ids`/`write_particle_ids` read AHF membership, or select from the snapshot within `radius_factor × max_radius`; `build_param_file` fills `inputs/zoom_template.txt`.
+**`pugs.genetic`** — Zoom-in IC helpers. `particle_ids_from_catalog` assembles a region from the stored shells (catalog only, radii on the 0.5 R_vir grid); `particle_ids` selects from the snapshot (any radius). Both use `R200` as the reference and return identical particles for the same factor. `build_param_file` fills `inputs/zoom_template.txt`.
 
 ### Two unit systems
 
@@ -107,4 +113,8 @@ Every column declares a `system`, queryable via `catalog.system(name)`:
 - `test_simulation.py`: Snapshot discovery, ordering, the `halo_id` scheme
 - `test_halo_properties.py`: Physics, recomputed from particle data rather than compared against another stored value
 - `test_merger_forest.py`: Tree structure, merger counts, assembly redshifts
+- `test_particle_ids.py`: Shell geometry, that the ids really are delta-encoded on disk, and that the shells partition the 5 R_vir sphere
+- `test_genetic.py`: Zoom-region selection, and that the catalog and snapshot paths agree
 - `test_catalog.py`: Parquet output, schema uniformity, units reaching Arrow and non-Arrow (DuckDB) readers, the schema-version guard
+
+Two production hazards have regression tests because the 128³ test data cannot expose them on its own: AHF's separator differs between runs (tab-padded in NUGS128, single-space in NUGS2048), and the `hostHalo` "no host" sentinel is -1 or 0 depending on whether the run numbers ids from 0 or 1.

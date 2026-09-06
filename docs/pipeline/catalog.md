@@ -133,6 +133,16 @@ the tree, and dropping small progenitors before building it biases them: a halo
 whose two progenitors both fall below the cut would look like it had no merger
 at all.
 
+## Particle-id shells
+
+Optionally, the particles around each z=0 halo are stored as concentric shells
+of 0.5 R_vir out to 5 R_vir, so a zoom region can be built from the catalog
+without the snapshots. This is opt-in — set `PUGS_PARTICLE_IDS=1` — because it
+is much the largest part of a catalog.
+
+See [pugs.particle_ids](../api/particle-ids.md) for the layout and why the ids
+are bucketed by radius rather than sorted by it.
+
 ## Output layout
 
 ```
@@ -140,6 +150,7 @@ NUGS128_catalog/
     halos_DM128.00512.parquet
     ...
     halos_DM128.08192.parquet
+    shells_DM128.08192.parquet     (with PUGS_PARTICLE_IDS=1)
     provenance.json
 ```
 

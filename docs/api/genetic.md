@@ -6,12 +6,16 @@ title: pugs.genetic
 
 Helpers for generating zoom-in initial conditions for individual halos.
 
-Particle ids are read straight from AHF's membership file, or — when the zoom
-region needs to be larger than the halo the finder identified — selected from
-the snapshot within a multiple of the halo's radius. The catalog does not store
-precomputed id lists: the snapshot is already required to build one, so
-computing the region on demand avoids keeping a compressed copy of it in the
-catalog.
+There are two ways to get a zoom region:
+
+| | Needs | Radii |
+|---|---|---|
+| `particle_ids_from_catalog` | the catalog only | the shell grid: multiples of 0.5 up to 5 R_vir |
+| `particle_ids` | the snapshots on disk | any radius, any snapshot |
+
+Both return the same particles for the same factor, so the stored shells are a
+true substitute for re-reading the snapshot. See
+[pugs.particle_ids](particle-ids.md) for how the shells are stored.
 
 The typical workflow is:
 

@@ -103,3 +103,66 @@ def test_merger_link_ranks_follow_ahf_ordering(final_snapshot):
     assert np.all(links.rank[starts] == 0)
     # a progenitor can never share more particles than it has
     assert np.all(links.shared <= links.n_progenitor)
+
+
+# ------------------------------------------------------ delimiter handling ---
+
+_HEADER_FIELDS = ["ID(1)", "hostHalo(2)", "numSubStruct(3)", "Mhalo(4)", "npart(5)"]
+_ROWS = [[0, -1, 6, 1.36606e14, 26156], [1, 0, 0, 5.5e12, 4337]]
+
+
+def _write_ahf_halos(path, separator, pad=False):
+    def field(value):
+        text = f"{value:g}" if isinstance(value, float) else str(value)
+        return text.rjust(12) if pad else text
+
+    lines = ["#" + separator.join(_HEADER_FIELDS)]
+    lines += [separator.join(field(v) for v in row) for row in _ROWS]
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def test_delimiter_is_detected_from_the_header():
+    assert ahf._delimiter("#ID(1)\thostHalo(2)\n") == "\t"
+    assert ahf._delimiter("#ID(1) hostHalo(2)\n") == " "
+
+
+@pytest.mark.parametrize(
+    "separator,pad",
+    [("\t", True), ("\t", False), (" ", False)],
+    ids=["tab-padded", "tab-plain", "space"],
+)
+def test_reads_both_ahf_separator_conventions(tmp_path, separator, pad):
+    """
+    AHF is not consistent between runs: the NUGS128 catalogs are tab-separated
+    with the columns space-padded, the NUGS2048 ones single-space with no tabs
+    anywhere. Assuming either one makes the reader return a single column of
+    text on the other, which then fails much later as a missing column.
+    """
+    path = _write_ahf_halos(tmp_path / "sim.z0.000.AHF_halos", separator, pad)
+    table = ahf.read_halo_table(path)
+
+    assert table.column_names == ["ID", "hostHalo", "numSubStruct", "Mhalo", "npart"]
+    assert table.num_rows == len(_ROWS)
+    assert table.column("ID").to_pylist() == [0, 1]
+    assert table.column("npart").to_pylist() == [26156, 4337]
+
+
+def test_header_without_hash_is_rejected(tmp_path):
+    path = tmp_path / "sim.z0.000.AHF_halos"
+    path.write_text("ID(1) npart(5)\n0 10\n")
+    with pytest.raises(ValueError, match="header line"):
+        ahf.read_halo_table(path)
+
+
+def test_no_host_sentinel_is_not_assumed(final_snapshot):
+    """
+    The 'no host' value depends on where the run numbers halo ids from: -1
+    where they start at 0 (NUGS128), 0 where they start at 1 (NUGS2048).
+    Anything keying on hostHalo must compare against the smallest id present.
+    """
+    table = ahf.read_halo_table(final_snapshot.ahf("halos"))
+    ids = np.asarray(table.column("ID").to_numpy())
+    host = np.asarray(table.column("hostHalo").to_numpy())
+    assert (host < ids.min()).sum() > 0, "expected some halos with no host"
+    assert set(host[host >= ids.min()]) <= set(ids.tolist())

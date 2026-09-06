@@ -59,6 +59,8 @@ pytest tests/test_halo_properties.py::test_finder_mass_is_the_member_particle_ma
 | `test_simulation.py` | Snapshot discovery, ordering, and the `halo_id` scheme |
 | `test_halo_properties.py` | Physics, checked against direct particle computations |
 | `test_merger_forest.py` | Tree structure, merger counts, assembly redshifts |
+| `test_particle_ids.py` | Shell geometry, delta encoding, region partitioning |
+| `test_genetic.py` | Zoom-region selection, from snapshot and from catalog |
 | `test_catalog.py` | Parquet output, schema, units, provenance |
 
 The physics tests deliberately recompute each quantity from the particle data
