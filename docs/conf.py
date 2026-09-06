@@ -11,14 +11,10 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = ["colon_fence", "dollarmath"]
 
-html_theme = "pydata_sphinx_theme"
+html_theme = "nasa1976"
+html_short_title = "PUGS"
 html_theme_options = {
-    "github_url": "https://github.com/bwkeller/PUGS",
-    "use_edit_page_button": True,
-}
-html_context = {
-    "github_user": "bwkeller",
-    "github_repo": "PUGS",
-    "github_version": "main",
-    "doc_path": "docs",
+    "program_label": "Portable Universal Galaxy Sampler",
+    "document_number": "PUGS",
+    "color_scheme": "light",
 }

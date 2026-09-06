@@ -27,10 +27,11 @@ dev = [
     ]
 docs = [
     "sphinx",
-    "pydata-sphinx-theme",
+    "sphinx-nasa1976 @ git+https://github.com/bwkeller/nasa1976.git",
     "myst-parser",
     "sphinx-design",
     ]
+all = ["PUGS[dev,docs]"]
 
 [project.entry-points."tangos.property_modules"]
 properties = "pugs.properties"

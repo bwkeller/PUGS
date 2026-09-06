@@ -4,6 +4,10 @@
 ## Requirements
 - Python 3 (tested with version 3.9.16 and above)
 - Docker (tested with version 28.5.1, build e180ab8)
+- A C/C++ compiler with OpenMP support.  pynbody is built from source and
+  requires OpenMP; on macOS, Apple's clang does not support it, so install GCC
+  from Homebrew (`brew install gcc`) and point pip at it:
+  `CC=gcc-16 CXX=g++-16 pip install .[dev]`
 ## `inputs/
 This is the directory containing the input param files for CAMB and genetIC
 - `planck_2018_CAMB.ini`: this is the parameter file used to generate the

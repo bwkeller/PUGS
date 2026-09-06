@@ -10,6 +10,8 @@ title: Getting Started
 - **Docker** (tested with 28.5.1) — required for running GenetIC when building
   the volume IC
 - A Unix-like shell (Linux or macOS)
+- A C/C++ compiler with **OpenMP** support, for building pynbody from source
+  (see the macOS note below)
 
 For the full production volume build you also need at least **320 GB RAM** and
 roughly **96 CPU cores** for a reasonable wall time (~90 minutes).
@@ -28,7 +30,28 @@ pip install .[dev]
 
 `pip install .` (without `[dev]`) is sufficient for using the `pugs` Python
 package to query an existing TANGOS database; the `[dev]` extras add the build
-tools (CAMB, testing, linters).
+tools (CAMB, testing, linters), `[docs]` adds the Sphinx toolchain, and `[all]`
+installs both.
+
+### macOS: use Homebrew GCC
+
+pynbody is installed from its git `master` branch and compiled from source, and
+its build requires OpenMP. Apple's clang (what `gcc`/`g++` resolve to on macOS)
+does not support the `-fopenmp` flag, so the pynbody wheel build fails with:
+
+```
+clang++: error: unsupported option '-fopenmp'
+```
+
+Install GCC from Homebrew and tell pip to compile with it instead:
+
+```bash
+brew install gcc
+CC=gcc-16 CXX=g++-16 pip install .[dev]
+```
+
+Substitute the version suffix Homebrew installed (`ls /opt/homebrew/bin/gcc-*`).
+Exporting `CC`/`CXX` in your shell profile makes this permanent.
 
 ---
 
